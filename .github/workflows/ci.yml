@@ -42,3 +42,9 @@ jobs:
 
       - name: Verify Package Construction
         run: mvn package -DskipTests
+
+      - name: Install SDK to Local Maven Repository
+        run: mvn install -DskipTests
+
+      - name: Verify Playground SDK Usability
+        run: mvn compile exec:java "-Dexec.mainClass=io.transcodex.playground.PlaygroundApp" -f transcodex-playground/pom.xml

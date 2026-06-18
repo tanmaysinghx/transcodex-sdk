@@ -26,6 +26,6 @@ jobs:
           server-username: ${{ github.actor }}
           server-password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify Consumer Compilation
+      - name: Verify Consumer Compilation & Execution
         run: |
-          mvn clean compile -f transcodex-playground/pom.xml
+          mvn clean compile exec:java "-Dexec.mainClass=io.transcodex.playground.PlaygroundApp" -f transcodex-playground/pom.xml
