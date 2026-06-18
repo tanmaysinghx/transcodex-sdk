@@ -1,0 +1,38 @@
+name: Dependency Maintenance
+
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Every Monday at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    name: Check Dependency Updates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Check Dependency Updates
+        run: |
+          mvn versions:display-dependency-updates -DgenerateBackupPoms=false | tee dependency-updates.log
+
+      - name: Check Plugin Updates
+        run: |
+          mvn versions:display-plugin-updates -DgenerateBackupPoms=false | tee plugin-updates.log
+
+      - name: Upload Update Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-update-reports
+          path: |
+            dependency-updates.log
+            plugin-updates.log
