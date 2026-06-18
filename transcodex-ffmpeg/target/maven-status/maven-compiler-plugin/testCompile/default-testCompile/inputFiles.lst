@@ -2,3 +2,4 @@ D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\test\java\io\transcodex\ff
 D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\test\java\io\transcodex\ffmpeg\executor\ProcessBuilderExecutorTest.java
 D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\test\java\io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractorIntegrationTest.java
 D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\test\java\io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractorTest.java
+D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\test\java\io\transcodex\ffmpeg\metadata\JacksonMetadataParserTest.java
