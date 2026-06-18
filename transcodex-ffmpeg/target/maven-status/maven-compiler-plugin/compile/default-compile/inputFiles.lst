@@ -1,8 +1,0 @@
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\executor\CommandResult.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\executor\FfmpegExecutor.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\executor\ProcessBuilderExecutor.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractor.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\metadata\JacksonMetadataParser.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\metadata\MetadataParser.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\video\FfmpegThumbnailGenerator.java
-D:\Code\Projects\transcodex-sdk\transcodex-ffmpeg\src\main\java\io\transcodex\ffmpeg\video\FfmpegVideoTranscoder.java

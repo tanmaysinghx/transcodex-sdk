@@ -1,6 +1,0 @@
-io\transcodex\api\metadata\MetadataExtractor.class
-io\transcodex\api\video\VideoTranscoder.class
-io\transcodex\api\storage\StorageProvider.class
-io\transcodex\api\video\DefaultVideoProcessor.class
-io\transcodex\api\video\ThumbnailGenerator.class
-io\transcodex\api\video\VideoProcessor.class

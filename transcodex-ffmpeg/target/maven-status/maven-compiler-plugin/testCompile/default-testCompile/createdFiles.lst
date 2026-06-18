@@ -1,8 +1,0 @@
-io\transcodex\ffmpeg\metadata\JacksonMetadataParserTest.class
-io\transcodex\ffmpeg\video\FfmpegVideoTranscoderTest.class
-io\transcodex\ffmpeg\video\VideoProcessorIntegrationTest.class
-io\transcodex\ffmpeg\executor\CommandResultTest.class
-io\transcodex\ffmpeg\executor\ProcessBuilderExecutorTest.class
-io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractorIntegrationTest.class
-io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractorTest.class
-io\transcodex\ffmpeg\video\FfmpegThumbnailGeneratorTest.class
