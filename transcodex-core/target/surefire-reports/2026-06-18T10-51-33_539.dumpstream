@@ -1,5 +1,0 @@
-# Created at 2026-06-18T10:51:33.654
-Boot Manifest-JAR contains absolute paths in classpath 'D:\Code\Projects\transcodex-sdk\transcodex-core\target\test-classes'
-Hint: <argLine>-Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
-'other' has different root
-

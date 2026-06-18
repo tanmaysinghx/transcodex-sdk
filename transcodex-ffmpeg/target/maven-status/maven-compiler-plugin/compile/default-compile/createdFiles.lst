@@ -1,0 +1,6 @@
+io\transcodex\ffmpeg\metadata\FfprobeMetadataExtractor.class
+io\transcodex\ffmpeg\metadata\JacksonMetadataParser.class
+io\transcodex\ffmpeg\executor\CommandResult.class
+io\transcodex\ffmpeg\executor\ProcessBuilderExecutor.class
+io\transcodex\ffmpeg\executor\FfmpegExecutor.class
+io\transcodex\ffmpeg\metadata\MetadataParser.class
