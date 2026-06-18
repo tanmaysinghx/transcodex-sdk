@@ -3,14 +3,12 @@ target/
 *.class
 dependency-reduced-pom.xml
 
-# Logging & Reports
+# Logs
 *.log
-benchmarks-result.json
-benchmarks-report.json
-release-artifacts/
 
 # IDEs
 .idea/
+.vscode/
 *.iml
 .settings/
 .classpath
@@ -20,7 +18,5 @@ release-artifacts/
 .DS_Store
 Thumbs.db
 
-# Playground Sandbox
-transcodex-playground/target/
+# Playground output
 transcodex-playground/output/
-

@@ -3,20 +3,37 @@ package io.transcodex.api.video;
 import io.transcodex.api.metadata.MetadataExtractor;
 import io.transcodex.api.storage.StorageProvider;
 import io.transcodex.core.metadata.VideoMetadata;
-import io.transcodex.core.video.*;
+import io.transcodex.core.video.HlsEncryptionConfig;
+import io.transcodex.core.video.Thumbnail;
+import io.transcodex.core.video.ThumbnailOptions;
+import io.transcodex.core.video.TranscodingOptions;
+import io.transcodex.core.video.VideoAsset;
+import io.transcodex.core.video.VideoException;
+import io.transcodex.core.video.VideoRequest;
+import io.transcodex.core.video.VideoResolution;
+import io.transcodex.core.video.VideoResult;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ForkJoinPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Default orchestrator executing the video transcode/thumbnail workflow. */
+/** Coordinates metadata extraction, thumbnail generation, transcoding, and optional storage. */
 public class DefaultVideoProcessor implements VideoProcessor {
 
   private static final Logger log = LoggerFactory.getLogger(DefaultVideoProcessor.class);
+  private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final MetadataExtractor metadataExtractor;
   private final VideoTranscoder videoTranscoder;
@@ -69,280 +86,267 @@ public class DefaultVideoProcessor implements VideoProcessor {
 
   @Override
   public VideoResult process(VideoRequest request) throws VideoException {
-    log.info("Starting video processing pipeline for source: {}", request.source());
+    Objects.requireNonNull(request, "request must not be null");
+    createOutputDirectory(request.outputDir());
 
-    try {
-      Files.createDirectories(request.outputDir());
-    } catch (IOException e) {
-      throw new VideoException("Failed to create output directory: " + request.outputDir(), e);
-    }
-
-    // 1. Extract Metadata
+    log.info("Processing video: {}", request.source());
     VideoMetadata metadata = metadataExtractor.extract(request.source());
-    log.info(
-        "Successfully extracted metadata: duration={}s, format={}",
-        metadata.duration().toSeconds(),
-        metadata.format());
-
-    // 2. Generate AES-128 encryption key if requested
-    HlsEncryptionConfig encryptionConfig = null;
-    Path encryptionKeyFile = null;
-    if (request.encryptChunks() && request.generateHls()) {
-      try {
-        encryptionConfig = generateEncryptionKey(request.outputDir());
-        encryptionKeyFile = encryptionConfig.keyFile();
-        log.info("Generated AES-128 encryption key at: {}", encryptionKeyFile);
-      } catch (IOException e) {
-        throw new VideoException("Failed to generate encryption key", e);
-      }
-    }
+    HlsEncryptionConfig encryption = createEncryptionConfig(request);
 
     List<CompletableFuture<Void>> tasks = new ArrayList<>();
-    List<VideoAsset> transcodedAssets = Collections.synchronizedList(new ArrayList<>());
-    List<Path> filesToClean = Collections.synchronizedList(new ArrayList<>());
+    List<VideoAsset> assets = Collections.synchronizedList(new ArrayList<>());
+    List<Path> temporaryFiles = Collections.synchronizedList(new ArrayList<>());
 
-    // 3. Generate Thumbnail (Async/Parallel)
-    Optional<Thumbnail> thumbnail;
-    if (request.generateThumbnail() && request.thumbnailOptions().isPresent()) {
-      ThumbnailOptions thumbOpts = request.thumbnailOptions().get();
-      String thumbFilename = "thumbnail_" + System.currentTimeMillis() + "." + thumbOpts.format();
-      Path targetThumb = request.outputDir().resolve(thumbFilename);
+    Optional<Thumbnail> thumbnail = scheduleThumbnail(request, tasks, temporaryFiles);
+    scheduleTranscodes(request, encryption, tasks, assets, temporaryFiles);
+    await(tasks);
 
-      tasks.add(
-          CompletableFuture.runAsync(
-              () -> {
-                log.info("Generating thumbnail at position {}s", thumbOpts.positionSeconds());
-                thumbnailGenerator.generate(request.source(), targetThumb, thumbOpts);
-                filesToClean.add(targetThumb);
-              },
-              executorService));
-      thumbnail =
-          Optional.of(
-              new Thumbnail(
-                  targetThumb,
-                  thumbOpts.width(),
-                  thumbOpts.height(),
-                  thumbOpts.positionSeconds(),
-                  thumbOpts.format()));
-    } else {
-      thumbnail = Optional.empty();
-    }
+    Path masterPlaylist = createMasterPlaylistIfNeeded(request, assets);
+    List<String> storedKeys =
+        uploadIfConfigured(
+            request,
+            thumbnail,
+            assets,
+            masterPlaylist,
+            encryption == null ? null : encryption.keyFile(),
+            temporaryFiles);
 
-    // 4. Transcode Video Variants (Async/Parallel — one virtual thread per resolution)
-    final HlsEncryptionConfig finalEncryptionConfig = encryptionConfig;
-    for (VideoResolution resolution : request.resolutions()) {
-      String ext = request.generateHls() ? ".m3u8" : ".mp4";
-      String videoFilename =
-          "transcoded_" + resolution.label() + "_" + System.currentTimeMillis() + ext;
-      Path targetVideo = request.outputDir().resolve(videoFilename);
-
-      TranscodingOptions.Builder transOptsBuilder =
-          TranscodingOptions.builder()
-              .resolution(resolution)
-              .generateHls(request.generateHls())
-              .threads(request.encodingThreads());
-
-      if (finalEncryptionConfig != null) {
-        transOptsBuilder.encryptionConfig(finalEncryptionConfig);
-      }
-
-      TranscodingOptions transOpts = transOptsBuilder.build();
-
-      tasks.add(
-          CompletableFuture.runAsync(
-              () -> {
-                log.info("Transcoding video to resolution {}", resolution.label());
-                videoTranscoder.transcode(request.source(), targetVideo, transOpts);
-                long size;
-                try {
-                  size = Files.size(targetVideo);
-                } catch (IOException e) {
-                  size = 0L;
-                }
-                transcodedAssets.add(
-                    new VideoAsset(targetVideo, resolution, size, transOpts.videoCodec()));
-                filesToClean.add(targetVideo);
-
-                if (request.generateHls()) {
-                  try (var stream = Files.list(request.outputDir())) {
-                    stream
-                        .filter(
-                            p ->
-                                p.getFileName().toString().endsWith(".ts")
-                                    && p.getFileName()
-                                        .toString()
-                                        .startsWith("transcoded_" + resolution.label()))
-                        .forEach(filesToClean::add);
-                  } catch (IOException ignored) {
-                  }
-                }
-              },
-              executorService));
-    }
-
-    // Wait for all tasks to complete
-    try {
-      CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();
-    } catch (CompletionException e) {
-      if (e.getCause() instanceof VideoException) {
-        throw (VideoException) e.getCause();
-      }
-      throw new VideoException("Error during parallel transcoding/thumbnail tasks", e.getCause());
-    }
-
-    // 5. Generate Master Adaptive Playlist
-    Path masterPlaylist = null;
-    if (request.generateHls() && transcodedAssets.size() > 0) {
-      try {
-        masterPlaylist = generateMasterPlaylist(request.outputDir(), transcodedAssets);
-        log.info("Generated master adaptive playlist: {}", masterPlaylist);
-      } catch (IOException e) {
-        throw new VideoException("Failed to generate master playlist", e);
-      }
-    }
-
-    // 6. Upload Assets to Storage if storageProvider and storagePrefix are present
-    List<String> storedKeys = new ArrayList<>();
-    if (storageProvider.isPresent() && request.storagePrefix().isPresent()) {
-      String prefix = request.storagePrefix().get();
-      log.info("Uploading assets to storage with prefix: {}", prefix);
-
-      StorageProvider provider = storageProvider.get();
-
-      try {
-        // Upload thumbnail
-        if (thumbnail.isPresent()) {
-          Path thumbFile = thumbnail.get().path();
-          String key = prefix + "/" + thumbFile.getFileName().toString();
-          provider.store(thumbFile, key);
-          storedKeys.add(key);
-        }
-
-        // Upload master playlist
-        if (masterPlaylist != null) {
-          String key = prefix + "/" + masterPlaylist.getFileName().toString();
-          provider.store(masterPlaylist, key);
-          storedKeys.add(key);
-        }
-
-        // Upload encryption key
-        if (encryptionKeyFile != null) {
-          String key = prefix + "/" + encryptionKeyFile.getFileName().toString();
-          provider.store(encryptionKeyFile, key);
-          storedKeys.add(key);
-        }
-
-        // Upload video variants
-        for (VideoAsset asset : transcodedAssets) {
-          Path videoFile = asset.path();
-          String key = prefix + "/" + videoFile.getFileName().toString();
-          provider.store(videoFile, key);
-          storedKeys.add(key);
-
-          if (request.generateHls()) {
-            String baseName = videoFile.getFileName().toString().replace(".m3u8", "");
-            try (var stream = Files.list(videoFile.getParent())) {
-              List<Path> tsFiles =
-                  stream
-                      .filter(
-                          p ->
-                              p.getFileName().toString().endsWith(".ts")
-                                  && p.getFileName().toString().startsWith(baseName))
-                      .toList();
-              for (Path tsFile : tsFiles) {
-                String tsKey = prefix + "/" + tsFile.getFileName().toString();
-                provider.store(tsFile, tsKey);
-                storedKeys.add(tsKey);
-              }
-            } catch (IOException ignored) {
-            }
-          }
-        }
-      } finally {
-        // Post-upload cleanup of local files
-        log.info("Cleaning up temporary local files after upload");
-        for (Path path : filesToClean) {
-          try {
-            Files.deleteIfExists(path);
-          } catch (IOException e) {
-            log.warn("Failed to delete temporary file: {}", path, e);
-          }
-        }
-      }
-    }
-
-    log.info("Video processing pipeline finished successfully");
     return new VideoResult(
         metadata,
         thumbnail,
-        List.copyOf(transcodedAssets),
-        List.copyOf(storedKeys),
+        List.copyOf(assets),
+        storedKeys,
         Optional.ofNullable(masterPlaylist),
-        Optional.ofNullable(encryptionKeyFile));
+        Optional.ofNullable(encryption).map(HlsEncryptionConfig::keyFile));
   }
 
-  /**
-   * Generates a random 16-byte AES-128 encryption key and a key_info file for FFmpeg.
-   *
-   * @param outputDir directory to write key files into
-   * @return the encryption configuration
-   */
-  private HlsEncryptionConfig generateEncryptionKey(Path outputDir) throws IOException {
-    // Generate 16-byte random AES key
-    byte[] keyBytes = new byte[16];
-    new SecureRandom().nextBytes(keyBytes);
-
-    Path keyFile = outputDir.resolve("encryption.key");
-    Files.write(keyFile, keyBytes);
-
-    // The key URI is a placeholder — the caller (playground/app) sets the real URI
-    // by rewriting the .m3u8 playlist or using a proxy. For FFmpeg, we use a relative path.
-    String keyUri = "encryption.key";
-
-    // Create key_info file:
-    // Line 1: Key URI (what players request)
-    // Line 2: Path to key file (what FFmpeg reads during encoding)
-    Path keyInfoFile = outputDir.resolve("key_info.txt");
-    String keyInfoContent =
-        keyUri + "\n" + keyFile.toAbsolutePath().toString() + "\n";
-    Files.writeString(keyInfoFile, keyInfoContent);
-
-    return new HlsEncryptionConfig(keyFile, keyInfoFile, keyUri);
+  private void createOutputDirectory(Path outputDir) {
+    try {
+      Files.createDirectories(outputDir);
+    } catch (IOException e) {
+      throw new VideoException("Failed to create output directory: " + outputDir, e);
+    }
   }
 
-  /**
-   * Generates a master HLS playlist (master.m3u8) referencing all resolution variant playlists.
-   *
-   * @param outputDir directory containing the variant playlists
-   * @param assets list of transcoded video assets
-   * @return path to the master playlist
-   */
-  private Path generateMasterPlaylist(Path outputDir, List<VideoAsset> assets) throws IOException {
-    StringBuilder sb = new StringBuilder();
-    sb.append("#EXTM3U\n");
-    sb.append("#EXT-X-VERSION:3\n");
-
-    // Sort by resolution height for proper ordering
-    List<VideoAsset> sorted = new ArrayList<>(assets);
-    sorted.sort(Comparator.comparingInt(a -> a.resolution().height()));
-
-    for (VideoAsset asset : sorted) {
-      VideoResolution res = asset.resolution();
-      long bandwidth = res.defaultBitrateBps();
-      String variantFilename = asset.path().getFileName().toString();
-
-      sb.append("#EXT-X-STREAM-INF:BANDWIDTH=")
-          .append(bandwidth)
-          .append(",RESOLUTION=")
-          .append(res.width())
-          .append("x")
-          .append(res.height())
-          .append("\n");
-      sb.append(variantFilename).append("\n");
+  private HlsEncryptionConfig createEncryptionConfig(VideoRequest request) {
+    if (!request.encryptChunks() || !request.generateHls()) {
+      return null;
     }
 
-    Path masterPlaylist = outputDir.resolve("master.m3u8");
-    Files.writeString(masterPlaylist, sb.toString());
-    return masterPlaylist;
+    try {
+      byte[] key = new byte[16];
+      SECURE_RANDOM.nextBytes(key);
+
+      Path keyFile = request.outputDir().resolve("encryption.key");
+      Path keyInfoFile = request.outputDir().resolve("key_info.txt");
+      Files.write(keyFile, key);
+      Files.writeString(keyInfoFile, "encryption.key\n" + keyFile.toAbsolutePath() + "\n");
+
+      return new HlsEncryptionConfig(keyFile, keyInfoFile, "encryption.key");
+    } catch (IOException e) {
+      throw new VideoException("Failed to generate encryption key", e);
+    }
+  }
+
+  private Optional<Thumbnail> scheduleThumbnail(
+      VideoRequest request, List<CompletableFuture<Void>> tasks, List<Path> temporaryFiles) {
+    if (!request.generateThumbnail() || request.thumbnailOptions().isEmpty()) {
+      return Optional.empty();
+    }
+
+    ThumbnailOptions options = request.thumbnailOptions().orElseThrow();
+    Path target =
+        request
+            .outputDir()
+            .resolve("thumbnail_" + System.currentTimeMillis() + "." + options.format());
+
+    tasks.add(
+        CompletableFuture.runAsync(
+            () -> {
+              thumbnailGenerator.generate(request.source(), target, options);
+              temporaryFiles.add(target);
+            },
+            executorService));
+
+    return Optional.of(
+        new Thumbnail(
+            target,
+            options.width(),
+            options.height(),
+            options.positionSeconds(),
+            options.format()));
+  }
+
+  private void scheduleTranscodes(
+      VideoRequest request,
+      HlsEncryptionConfig encryption,
+      List<CompletableFuture<Void>> tasks,
+      List<VideoAsset> assets,
+      List<Path> temporaryFiles) {
+    for (VideoResolution resolution : request.resolutions()) {
+      Path target = createVideoTarget(request, resolution);
+      TranscodingOptions options = createTranscodingOptions(request, resolution, encryption);
+
+      tasks.add(
+          CompletableFuture.runAsync(
+              () -> {
+                videoTranscoder.transcode(request.source(), target, options);
+                assets.add(
+                    new VideoAsset(target, resolution, fileSize(target), options.videoCodec()));
+                temporaryFiles.add(target);
+                if (request.generateHls()) {
+                  temporaryFiles.addAll(findHlsSegments(target));
+                }
+              },
+              executorService));
+    }
+  }
+
+  private Path createVideoTarget(VideoRequest request, VideoResolution resolution) {
+    String extension = request.generateHls() ? ".m3u8" : ".mp4";
+    String filename =
+        "transcoded_" + resolution.label() + "_" + System.currentTimeMillis() + extension;
+    return request.outputDir().resolve(filename);
+  }
+
+  private TranscodingOptions createTranscodingOptions(
+      VideoRequest request, VideoResolution resolution, HlsEncryptionConfig encryption) {
+    TranscodingOptions.Builder builder =
+        TranscodingOptions.builder()
+            .resolution(resolution)
+            .generateHls(request.generateHls())
+            .threads(request.encodingThreads());
+    if (encryption != null) {
+      builder.encryptionConfig(encryption);
+    }
+    return builder.build();
+  }
+
+  private void await(List<CompletableFuture<Void>> tasks) {
+    try {
+      CompletableFuture.allOf(tasks.toArray(CompletableFuture[]::new)).join();
+    } catch (CompletionException e) {
+      if (e.getCause() instanceof VideoException videoException) {
+        throw videoException;
+      }
+      throw new VideoException("Video processing task failed", e.getCause());
+    }
+  }
+
+  private Path createMasterPlaylistIfNeeded(VideoRequest request, List<VideoAsset> assets) {
+    if (!request.generateHls() || assets.isEmpty()) {
+      return null;
+    }
+
+    try {
+      return generateMasterPlaylist(request.outputDir(), assets);
+    } catch (IOException e) {
+      throw new VideoException("Failed to generate master playlist", e);
+    }
+  }
+
+  private List<String> uploadIfConfigured(
+      VideoRequest request,
+      Optional<Thumbnail> thumbnail,
+      List<VideoAsset> assets,
+      Path masterPlaylist,
+      Path encryptionKey,
+      List<Path> temporaryFiles) {
+    if (storageProvider.isEmpty() || request.storagePrefix().isEmpty()) {
+      return List.of();
+    }
+
+    StorageProvider provider = storageProvider.orElseThrow();
+    String prefix = request.storagePrefix().orElseThrow();
+    List<String> storedKeys = new ArrayList<>();
+
+    try {
+      thumbnail.ifPresent(value -> store(provider, prefix, value.path(), storedKeys));
+      storeIfPresent(provider, prefix, masterPlaylist, storedKeys);
+      storeIfPresent(provider, prefix, encryptionKey, storedKeys);
+
+      for (VideoAsset asset : assets) {
+        store(provider, prefix, asset.path(), storedKeys);
+        if (request.generateHls()) {
+          for (Path segment : findHlsSegments(asset.path())) {
+            store(provider, prefix, segment, storedKeys);
+          }
+        }
+      }
+      return List.copyOf(storedKeys);
+    } finally {
+      deleteFiles(temporaryFiles);
+    }
+  }
+
+  private void storeIfPresent(
+      StorageProvider provider, String prefix, Path path, List<String> storedKeys) {
+    if (path != null) {
+      store(provider, prefix, path, storedKeys);
+    }
+  }
+
+  private void store(StorageProvider provider, String prefix, Path path, List<String> storedKeys) {
+    String key = prefix + "/" + path.getFileName();
+    provider.store(path, key);
+    storedKeys.add(key);
+  }
+
+  private List<Path> findHlsSegments(Path playlist) {
+    String baseName = playlist.getFileName().toString().replaceFirst("\\.m3u8$", "");
+    try (var files = Files.list(playlist.getParent())) {
+      return files
+          .filter(
+              path -> {
+                String name = path.getFileName().toString();
+                return name.startsWith(baseName) && name.endsWith(".ts");
+              })
+          .toList();
+    } catch (IOException e) {
+      log.warn("Failed to list HLS segments for {}", playlist, e);
+      return List.of();
+    }
+  }
+
+  private void deleteFiles(List<Path> paths) {
+    for (Path path : paths) {
+      try {
+        Files.deleteIfExists(path);
+      } catch (IOException e) {
+        log.warn("Failed to delete temporary file: {}", path, e);
+      }
+    }
+  }
+
+  private long fileSize(Path path) {
+    try {
+      return Files.size(path);
+    } catch (IOException e) {
+      return 0L;
+    }
+  }
+
+  private Path generateMasterPlaylist(Path outputDir, List<VideoAsset> assets) throws IOException {
+    List<VideoAsset> sortedAssets = new ArrayList<>(assets);
+    sortedAssets.sort(Comparator.comparingInt(asset -> asset.resolution().height()));
+
+    StringBuilder content = new StringBuilder("#EXTM3U\n#EXT-X-VERSION:3\n");
+    for (VideoAsset asset : sortedAssets) {
+      VideoResolution resolution = asset.resolution();
+      content
+          .append("#EXT-X-STREAM-INF:BANDWIDTH=")
+          .append(resolution.defaultBitrateBps())
+          .append(",RESOLUTION=")
+          .append(resolution.width())
+          .append("x")
+          .append(resolution.height())
+          .append("\n")
+          .append(asset.path().getFileName())
+          .append("\n");
+    }
+
+    Path playlist = outputDir.resolve("master.m3u8");
+    Files.writeString(playlist, content);
+    return playlist;
   }
 }

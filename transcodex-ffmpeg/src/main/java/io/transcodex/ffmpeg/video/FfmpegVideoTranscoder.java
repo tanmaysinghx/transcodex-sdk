@@ -105,8 +105,7 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
       // AES-128 encryption
       if (options.encryptionConfig().isPresent()) {
         command.add("-hls_key_info_file");
-        command.add(
-            options.encryptionConfig().get().keyInfoFile().toAbsolutePath().toString());
+        command.add(options.encryptionConfig().get().keyInfoFile().toAbsolutePath().toString());
       }
     }
 

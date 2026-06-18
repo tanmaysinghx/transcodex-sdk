@@ -1,50 +1,23 @@
-name: Continuous Integration
+name: CI
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main]
   pull_request:
-    branches:
-      - main
-      - develop
 
 jobs:
-  build-and-test:
-    name: Build, Format Check & Run Tests
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Java 25
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
-          java-version: '25'
-          distribution: 'temurin'
-          cache: 'maven'
-
-      - name: Install FFmpeg & FFprobe
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Verify Formatting (Spotless)
-        run: mvn spotless:check
-
-      - name: Compile Code
-        run: mvn clean compile
-
-      - name: Run Tests
-        run: mvn test
-
-      - name: Verify Package Construction
-        run: mvn package -DskipTests
-
-      - name: Install SDK to Local Maven Repository
-        run: mvn install -DskipTests
-
-      - name: Verify Playground SDK Usability
-        run: mvn compile exec:java "-Dexec.mainClass=io.transcodex.playground.PlaygroundApp" -f transcodex-playground/pom.xml
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Build and test SDK
+        run: mvn --batch-mode clean install spotless:check
+      - name: Compile playground
+        run: mvn --batch-mode --file transcodex-playground/pom.xml test
