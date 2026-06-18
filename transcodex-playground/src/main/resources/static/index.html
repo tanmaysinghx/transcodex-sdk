@@ -514,10 +514,14 @@
                     <!-- Target Resolutions -->
                     <div>
                         <h3 class="section-title">Target Resolutions</h3>
-                        <div class="option-group">
+                        <div class="option-group" style="margin-bottom: 25px;">
                             <label class="checkbox-label">
                                 <input type="checkbox" name="resolutions" value="P360">
                                 <span>360p (640x360)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="resolutions" value="P480">
+                                <span>480p (854x480)</span>
                             </label>
                             <label class="checkbox-label">
                                 <input type="checkbox" name="resolutions" value="P720" checked>
@@ -527,6 +531,32 @@
                                 <input type="checkbox" name="resolutions" value="P1080">
                                 <span>1080p (1920x1080)</span>
                             </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="resolutions" value="P2160">
+                                <span>4K (3840x2160)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="resolutions" value="P4320">
+                                <span>8K (7680x4320)</span>
+                            </label>
+                        </div>
+
+                        <h3 class="section-title">Streaming Format</h3>
+                        <div class="option-group" style="margin-bottom: 20px;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="generateHls" value="true" id="hls-check">
+                                <span style="font-weight:600; color:#10b981;">Generate HLS Adaptive Stream</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="encryptChunks" value="true" id="encrypt-check">
+                                <span style="font-weight:600; color:#f59e0b;">🔒 Encrypt Chunks (AES-128)</span>
+                            </label>
+                        </div>
+
+                        <h3 class="section-title">Performance</h3>
+                        <div class="form-field">
+                            <label>Encoding Threads (0 = auto)</label>
+                            <input type="number" name="encodingThreads" value="4" min="0" max="32" style="max-width: 120px;">
                         </div>
                     </div>
 
@@ -614,6 +644,18 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- HLS Adaptive Stream Player -->
+                <div id="player-section" style="display:none; margin-top:25px;">
+                    <h3 class="section-title">🎬 Adaptive Stream Player</h3>
+                    <div style="border: 1px solid var(--border-glass); border-radius: 12px; overflow:hidden; background:#000;">
+                        <video id="hls-player" controls style="width:100%; max-height:450px; display:block;"></video>
+                    </div>
+                    <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <a id="master-playlist-link" href="#" target="_blank" class="download-btn" style="display:none;">View Master Playlist</a>
+                        <span id="encryption-badge" style="display:none; background:rgba(245,158,11,0.15); color:#f59e0b; padding:4px 12px; border-radius:6px; font-size:0.8rem; font-weight:600; border:1px solid rgba(245,158,11,0.3);">🔒 AES-128 Encrypted</span>
+                    </div>
+                </div>
                 
                 <button class="btn" style="margin-top:30px; background:rgba(255,255,255,0.05); border:1px solid var(--border-glass); box-shadow:none; color:var(--text-main);" onclick="resetPlayground()">
                     <span>Process Another Video</span>
@@ -621,6 +663,9 @@
             </div>
         </main>
     </div>
+
+    <!-- HLS.js CDN for adaptive stream playback -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
     <script>
         const dropZone = document.getElementById('drop-zone');
@@ -673,6 +718,15 @@
         // Toggle thumbnail controls
         thumbCheck.addEventListener('change', () => {
             thumbControls.style.display = thumbCheck.checked ? 'flex' : 'none';
+        });
+
+        // Encryption auto-enables HLS
+        const encryptCheck = document.getElementById('encrypt-check');
+        const hlsCheck = document.getElementById('hls-check');
+        encryptCheck.addEventListener('change', () => {
+            if (encryptCheck.checked) {
+                hlsCheck.checked = true;
+            }
         });
 
         // Submit and Transcode Action
@@ -750,23 +804,66 @@
             // Video variants download row
             data.transcodedAssets.forEach(asset => {
                 const sizeMB = (asset.sizeBytes / (1024 * 1024)).toFixed(2);
+                const isHls = asset.downloadUrl.endsWith('.m3u8');
+                const detailText = isHls 
+                    ? `Codec: ${asset.codec} | Adaptive Playlist (HLS)`
+                    : `Codec: ${asset.codec} | Size: ${sizeMB} MB`;
+                const titleText = isHls
+                    ? `HLS Playlist ${asset.resolution}`
+                    : `Transcoded ${asset.resolution}`;
+
                 downloadList.appendChild(createDownloadRow(
-                    `Transcoded ${asset.resolution}`,
-                    `Codec: ${asset.codec} | Size: ${sizeMB} MB`,
-                    asset.downloadUrl
+                    titleText,
+                    detailText,
+                    asset.downloadUrl,
+                    isHls
                 ));
             });
+
+            // Initialize HLS.js player if master playlist is available
+            const playerSection = document.getElementById('player-section');
+            const hlsPlayer = document.getElementById('hls-player');
+            const masterLink = document.getElementById('master-playlist-link');
+            const encBadge = document.getElementById('encryption-badge');
+
+            if (data.masterPlaylistUrl) {
+                playerSection.style.display = 'block';
+                masterLink.style.display = 'inline-block';
+                masterLink.href = data.masterPlaylistUrl;
+
+                if (data.encrypted) {
+                    encBadge.style.display = 'inline-block';
+                }
+
+                // HLS.js adaptive stream playback
+                if (Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(data.masterPlaylistUrl);
+                    hls.attachMedia(hlsPlayer);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        writeLog("[PLAYER] HLS manifest loaded — stream ready.");
+                    });
+                    hls.on(Hls.Events.ERROR, (event, errorData) => {
+                        writeLog(`[PLAYER] HLS error: ${errorData.type} - ${errorData.details}`);
+                    });
+                } else if (hlsPlayer.canPlayType('application/vnd.apple.mpegurl')) {
+                    // Safari native HLS
+                    hlsPlayer.src = data.masterPlaylistUrl;
+                }
+            }
         }
 
-        function createDownloadRow(title, sub, url) {
+        function createDownloadRow(title, sub, url, isHls) {
             const div = document.createElement('div');
             div.className = 'download-item';
+            const btnText = isHls ? "Stream Playlist" : "Download";
+            const downloadAttr = isHls ? "" : "download";
             div.innerHTML = `
                 <div class="download-info">
                     <h4>${title}</h4>
                     <p>${sub}</p>
                 </div>
-                <a href="${url}" class="download-btn" download>Download</a>
+                <a href="${url}" class="download-btn" target="_blank" ${downloadAttr}>${btnText}</a>
             `;
             return div;
         }
@@ -781,6 +878,15 @@
             submitBtn.setAttribute('disabled', 'true');
             consoleLog.innerHTML = '[SYSTEM] Awaiting job initiation...';
             thumbControls.style.display = 'flex';
+
+            // Reset player section
+            document.getElementById('player-section').style.display = 'none';
+            document.getElementById('master-playlist-link').style.display = 'none';
+            document.getElementById('encryption-badge').style.display = 'none';
+            const hlsPlayer = document.getElementById('hls-player');
+            hlsPlayer.pause();
+            hlsPlayer.removeAttribute('src');
+            hlsPlayer.load();
         }
     </script>
 </body>

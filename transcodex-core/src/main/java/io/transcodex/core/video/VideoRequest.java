@@ -13,7 +13,10 @@ public record VideoRequest(
     List<VideoResolution> resolutions,
     boolean generateThumbnail,
     Optional<ThumbnailOptions> thumbnailOptions,
-    Optional<String> storagePrefix) {
+    Optional<String> storagePrefix,
+    boolean generateHls,
+    boolean encryptChunks,
+    int encodingThreads) {
   public VideoRequest {
     Objects.requireNonNull(source, "Source path must not be null");
     Objects.requireNonNull(outputDir, "Output directory must not be null");
@@ -38,6 +41,9 @@ public record VideoRequest(
     private boolean generateThumbnail = false;
     private ThumbnailOptions thumbnailOptions;
     private String storagePrefix;
+    private boolean generateHls = false;
+    private boolean encryptChunks = false;
+    private int encodingThreads = 0;
 
     public Builder source(Path source) {
       this.source = source;
@@ -78,6 +84,21 @@ public record VideoRequest(
       return this;
     }
 
+    public Builder generateHls(boolean generateHls) {
+      this.generateHls = generateHls;
+      return this;
+    }
+
+    public Builder encryptChunks(boolean encryptChunks) {
+      this.encryptChunks = encryptChunks;
+      return this;
+    }
+
+    public Builder encodingThreads(int encodingThreads) {
+      this.encodingThreads = encodingThreads;
+      return this;
+    }
+
     public VideoRequest build() {
       Objects.requireNonNull(source, "Source path must not be null");
       Objects.requireNonNull(outputDir, "Output directory must not be null");
@@ -87,13 +108,21 @@ public record VideoRequest(
         thumbnailOptions = new ThumbnailOptions(640, 360, 1.0, "jpg");
       }
 
+      // If encryption is requested, HLS must be enabled
+      if (encryptChunks) {
+        generateHls = true;
+      }
+
       return new VideoRequest(
           source,
           outputDir,
           List.copyOf(resolutions),
           generateThumbnail,
           Optional.ofNullable(thumbnailOptions),
-          Optional.ofNullable(storagePrefix));
+          Optional.ofNullable(storagePrefix),
+          generateHls,
+          encryptChunks,
+          encodingThreads);
     }
   }
 }

@@ -22,4 +22,5 @@ Thumbs.db
 
 # Playground Sandbox
 transcodex-playground/target/
+transcodex-playground/output/
 

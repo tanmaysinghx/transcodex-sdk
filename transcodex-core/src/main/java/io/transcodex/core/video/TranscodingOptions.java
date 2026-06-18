@@ -1,6 +1,7 @@
 package io.transcodex.core.video;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /** Configuration options for video transcoding processes. */
 public record TranscodingOptions(
@@ -10,11 +11,15 @@ public record TranscodingOptions(
     Double frameRate,
     Long videoBitrate,
     Long audioBitrate,
-    boolean gpuAccelerated) {
+    boolean gpuAccelerated,
+    boolean generateHls,
+    int threads,
+    Optional<HlsEncryptionConfig> encryptionConfig) {
   public TranscodingOptions {
     Objects.requireNonNull(resolution, "Resolution must not be null");
     Objects.requireNonNull(videoCodec, "Video codec must not be null");
     Objects.requireNonNull(audioCodec, "Audio codec must not be null");
+    Objects.requireNonNull(encryptionConfig, "Encryption config wrapper must not be null");
   }
 
   public static Builder builder() {
@@ -29,6 +34,9 @@ public record TranscodingOptions(
     private Long videoBitrate;
     private Long audioBitrate;
     private boolean gpuAccelerated = false;
+    private boolean generateHls = false;
+    private int threads = 0;
+    private HlsEncryptionConfig encryptionConfig;
 
     public Builder resolution(VideoResolution resolution) {
       this.resolution = resolution;
@@ -65,6 +73,21 @@ public record TranscodingOptions(
       return this;
     }
 
+    public Builder generateHls(boolean generateHls) {
+      this.generateHls = generateHls;
+      return this;
+    }
+
+    public Builder threads(int threads) {
+      this.threads = threads;
+      return this;
+    }
+
+    public Builder encryptionConfig(HlsEncryptionConfig encryptionConfig) {
+      this.encryptionConfig = encryptionConfig;
+      return this;
+    }
+
     public TranscodingOptions build() {
       Objects.requireNonNull(resolution, "Resolution is required to build TranscodingOptions");
       if (videoBitrate == null) {
@@ -77,7 +100,10 @@ public record TranscodingOptions(
           frameRate,
           videoBitrate,
           audioBitrate,
-          gpuAccelerated);
+          gpuAccelerated,
+          generateHls,
+          threads,
+          Optional.ofNullable(encryptionConfig));
     }
   }
 }

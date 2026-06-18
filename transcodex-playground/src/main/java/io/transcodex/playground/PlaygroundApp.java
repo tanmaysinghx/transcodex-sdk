@@ -16,12 +16,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.core.io.FileSystemResource;
@@ -30,6 +31,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,10 +42,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class PlaygroundApp {
 
   private final VideoProcessor processor;
-  private final Map<String, Path> fileCache = new ConcurrentHashMap<>();
   private final Path baseStorageDir;
+  private final int defaultThreads;
 
-  public PlaygroundApp() throws IOException {
+  public PlaygroundApp(
+      @Value("${transcodex.storage.dir:#{null}}") String storageDirConfig,
+      @Value("${transcodex.encoding.threads:0}") int defaultThreads)
+      throws IOException {
     var executor = new ProcessBuilderExecutor();
     var metadataExtractor = new FfprobeMetadataExtractor(executor, new JacksonMetadataParser());
     var thumbnailGenerator = new FfmpegThumbnailGenerator(executor);
@@ -57,7 +62,14 @@ public class PlaygroundApp {
             Optional.empty(),
             Executors.newVirtualThreadPerTaskExecutor());
 
-    this.baseStorageDir = Files.createTempDirectory("transcodex-web-storage");
+    // Persistent storage: use configured dir or fallback to project-relative output
+    if (storageDirConfig != null && !storageDirConfig.isBlank()) {
+      this.baseStorageDir = Path.of(storageDirConfig);
+    } else {
+      this.baseStorageDir = Path.of("transcodex-playground", "output");
+    }
+    Files.createDirectories(this.baseStorageDir);
+    this.defaultThreads = defaultThreads;
   }
 
   public static void main(String[] args) {
@@ -72,7 +84,10 @@ public class PlaygroundApp {
           boolean generateThumbnail,
       @RequestParam(value = "thumbWidth", defaultValue = "320") int thumbWidth,
       @RequestParam(value = "thumbHeight", defaultValue = "180") int thumbHeight,
-      @RequestParam(value = "thumbPosition", defaultValue = "0.5") double thumbPosition) {
+      @RequestParam(value = "thumbPosition", defaultValue = "0.5") double thumbPosition,
+      @RequestParam(value = "generateHls", defaultValue = "false") boolean generateHls,
+      @RequestParam(value = "encryptChunks", defaultValue = "false") boolean encryptChunks,
+      @RequestParam(value = "encodingThreads", defaultValue = "0") int encodingThreads) {
 
     if (file.isEmpty()) {
       return ResponseEntity.badRequest().body("Uploaded file is empty");
@@ -91,8 +106,15 @@ public class PlaygroundApp {
       Path inputPath = sessionDir.resolve("input" + suffix);
       file.transferTo(inputPath.toFile());
 
+      int threads = encodingThreads > 0 ? encodingThreads : defaultThreads;
+
       VideoRequest.Builder requestBuilder =
-          VideoRequest.builder().source(inputPath).outputDir(sessionDir);
+          VideoRequest.builder()
+              .source(inputPath)
+              .outputDir(sessionDir)
+              .generateHls(generateHls)
+              .encryptChunks(encryptChunks)
+              .encodingThreads(threads);
 
       for (String resStr : resolutions) {
         try {
@@ -113,8 +135,7 @@ public class PlaygroundApp {
 
       List<Map<String, Object>> transcodedFiles = new ArrayList<>();
       for (VideoAsset asset : result.transcodedAssets()) {
-        String fileId = UUID.randomUUID().toString();
-        fileCache.put(fileId, asset.path());
+        String filename = asset.path().getFileName().toString();
         transcodedFiles.add(
             Map.of(
                 "resolution",
@@ -124,41 +145,43 @@ public class PlaygroundApp {
                 "codec",
                 asset.codec(),
                 "downloadUrl",
-                "/api/download?id="
-                    + fileId
-                    + "&name="
-                    + asset.path().getFileName().toString()));
+                "/api/files/" + sessionId + "/" + filename));
       }
 
       String thumbnailDownloadUrl = null;
       if (result.thumbnail().isPresent()) {
-        String fileId = UUID.randomUUID().toString();
-        fileCache.put(fileId, result.thumbnail().get().path());
-        thumbnailDownloadUrl =
-            "/api/download?id="
-                + fileId
-                + "&name="
-                + result.thumbnail().get().path().getFileName().toString();
+        String thumbName = result.thumbnail().get().path().getFileName().toString();
+        thumbnailDownloadUrl = "/api/files/" + sessionId + "/" + thumbName;
       }
 
-      Map<String, Object> response =
+      // Build response map (HashMap allows null values unlike Map.of)
+      Map<String, Object> response = new HashMap<>();
+      response.put("success", true);
+      response.put("sessionId", sessionId);
+      response.put(
+          "metadata",
           Map.of(
-              "success",
-              true,
-              "metadata",
-              Map.of(
-                  "format",
-                  result.metadata().format(),
-                  "width",
-                  result.metadata().videoStream().width(),
-                  "height",
-                  result.metadata().videoStream().height(),
-                  "durationSeconds",
-                  result.metadata().duration().toMillis() / 1000.0),
-              "transcodedAssets",
-              transcodedFiles,
-              "thumbnailUrl",
-              thumbnailDownloadUrl != null ? thumbnailDownloadUrl : "");
+              "format",
+              result.metadata().format(),
+              "width",
+              result.metadata().videoStream().width(),
+              "height",
+              result.metadata().videoStream().height(),
+              "durationSeconds",
+              result.metadata().duration().toMillis() / 1000.0));
+      response.put("transcodedAssets", transcodedFiles);
+      response.put("thumbnailUrl", thumbnailDownloadUrl != null ? thumbnailDownloadUrl : "");
+      response.put("encrypted", encryptChunks);
+
+      if (result.masterPlaylist().isPresent()) {
+        response.put(
+            "masterPlaylistUrl",
+            "/api/files/" + sessionId + "/" + result.masterPlaylist().get().getFileName());
+      }
+
+      if (result.encryptionKeyFile().isPresent()) {
+        response.put("keyUrl", "/api/keys/" + sessionId);
+      }
 
       return ResponseEntity.ok(response);
 
@@ -168,25 +191,48 @@ public class PlaygroundApp {
     }
   }
 
-  @GetMapping("/api/download")
-  public ResponseEntity<Resource> download(
-      @RequestParam("id") String id, @RequestParam("name") String name) {
-    Path filePath = fileCache.get(id);
-    if (filePath == null || !Files.exists(filePath)) {
+  /** Serves the AES-128 decryption key for a given session. */
+  @GetMapping("/api/keys/{sessionId}")
+  public ResponseEntity<Resource> serveKey(@PathVariable("sessionId") String sessionId) {
+    Path keyFile = baseStorageDir.resolve(sessionId).resolve("encryption.key");
+    if (!Files.exists(keyFile)) {
+      return ResponseEntity.notFound().build();
+    }
+
+    Resource resource = new FileSystemResource(keyFile);
+    return ResponseEntity.ok()
+        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"encryption.key\"")
+        .body(resource);
+  }
+
+  /** Serves any generated file (playlists, segments, thumbnails, videos). */
+  @GetMapping("/api/files/{sessionId}/{filename:.+}")
+  public ResponseEntity<Resource> serveFile(
+      @PathVariable("sessionId") String sessionId,
+      @PathVariable("filename") String filename) {
+    Path filePath = baseStorageDir.resolve(sessionId).resolve(filename);
+    if (!Files.exists(filePath)) {
       return ResponseEntity.notFound().build();
     }
 
     Resource resource = new FileSystemResource(filePath);
     String contentType = "application/octet-stream";
-    if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+    if (filename.endsWith(".m3u8")) {
+      contentType = "application/x-mpegURL";
+    } else if (filename.endsWith(".ts")) {
+      contentType = "video/MP2T";
+    } else if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) {
       contentType = "image/jpeg";
-    } else if (name.endsWith(".mp4")) {
+    } else if (filename.endsWith(".mp4")) {
       contentType = "video/mp4";
+    } else if (filename.endsWith(".key")) {
+      contentType = "application/octet-stream";
     }
 
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(contentType))
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + name + "\"")
+        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
         .body(resource);
   }
 }

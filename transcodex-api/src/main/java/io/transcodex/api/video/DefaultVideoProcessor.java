@@ -7,6 +7,7 @@ import io.transcodex.core.video.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.*;
 import org.slf4j.Logger;
@@ -83,11 +84,24 @@ public class DefaultVideoProcessor implements VideoProcessor {
         metadata.duration().toSeconds(),
         metadata.format());
 
+    // 2. Generate AES-128 encryption key if requested
+    HlsEncryptionConfig encryptionConfig = null;
+    Path encryptionKeyFile = null;
+    if (request.encryptChunks() && request.generateHls()) {
+      try {
+        encryptionConfig = generateEncryptionKey(request.outputDir());
+        encryptionKeyFile = encryptionConfig.keyFile();
+        log.info("Generated AES-128 encryption key at: {}", encryptionKeyFile);
+      } catch (IOException e) {
+        throw new VideoException("Failed to generate encryption key", e);
+      }
+    }
+
     List<CompletableFuture<Void>> tasks = new ArrayList<>();
     List<VideoAsset> transcodedAssets = Collections.synchronizedList(new ArrayList<>());
     List<Path> filesToClean = Collections.synchronizedList(new ArrayList<>());
 
-    // 2. Generate Thumbnail (Async/Parallel)
+    // 3. Generate Thumbnail (Async/Parallel)
     Optional<Thumbnail> thumbnail;
     if (request.generateThumbnail() && request.thumbnailOptions().isPresent()) {
       ThumbnailOptions thumbOpts = request.thumbnailOptions().get();
@@ -114,13 +128,25 @@ public class DefaultVideoProcessor implements VideoProcessor {
       thumbnail = Optional.empty();
     }
 
-    // 3. Transcode Video Variants (Async/Parallel)
+    // 4. Transcode Video Variants (Async/Parallel — one virtual thread per resolution)
+    final HlsEncryptionConfig finalEncryptionConfig = encryptionConfig;
     for (VideoResolution resolution : request.resolutions()) {
+      String ext = request.generateHls() ? ".m3u8" : ".mp4";
       String videoFilename =
-          "transcoded_" + resolution.label() + "_" + System.currentTimeMillis() + ".mp4";
+          "transcoded_" + resolution.label() + "_" + System.currentTimeMillis() + ext;
       Path targetVideo = request.outputDir().resolve(videoFilename);
 
-      TranscodingOptions transOpts = TranscodingOptions.builder().resolution(resolution).build();
+      TranscodingOptions.Builder transOptsBuilder =
+          TranscodingOptions.builder()
+              .resolution(resolution)
+              .generateHls(request.generateHls())
+              .threads(request.encodingThreads());
+
+      if (finalEncryptionConfig != null) {
+        transOptsBuilder.encryptionConfig(finalEncryptionConfig);
+      }
+
+      TranscodingOptions transOpts = transOptsBuilder.build();
 
       tasks.add(
           CompletableFuture.runAsync(
@@ -136,6 +162,20 @@ public class DefaultVideoProcessor implements VideoProcessor {
                 transcodedAssets.add(
                     new VideoAsset(targetVideo, resolution, size, transOpts.videoCodec()));
                 filesToClean.add(targetVideo);
+
+                if (request.generateHls()) {
+                  try (var stream = Files.list(request.outputDir())) {
+                    stream
+                        .filter(
+                            p ->
+                                p.getFileName().toString().endsWith(".ts")
+                                    && p.getFileName()
+                                        .toString()
+                                        .startsWith("transcoded_" + resolution.label()))
+                        .forEach(filesToClean::add);
+                  } catch (IOException ignored) {
+                  }
+                }
               },
               executorService));
     }
@@ -150,7 +190,18 @@ public class DefaultVideoProcessor implements VideoProcessor {
       throw new VideoException("Error during parallel transcoding/thumbnail tasks", e.getCause());
     }
 
-    // 4. Upload Assets to Storage if storageProvider and storagePrefix are present
+    // 5. Generate Master Adaptive Playlist
+    Path masterPlaylist = null;
+    if (request.generateHls() && transcodedAssets.size() > 0) {
+      try {
+        masterPlaylist = generateMasterPlaylist(request.outputDir(), transcodedAssets);
+        log.info("Generated master adaptive playlist: {}", masterPlaylist);
+      } catch (IOException e) {
+        throw new VideoException("Failed to generate master playlist", e);
+      }
+    }
+
+    // 6. Upload Assets to Storage if storageProvider and storagePrefix are present
     List<String> storedKeys = new ArrayList<>();
     if (storageProvider.isPresent() && request.storagePrefix().isPresent()) {
       String prefix = request.storagePrefix().get();
@@ -167,12 +218,45 @@ public class DefaultVideoProcessor implements VideoProcessor {
           storedKeys.add(key);
         }
 
+        // Upload master playlist
+        if (masterPlaylist != null) {
+          String key = prefix + "/" + masterPlaylist.getFileName().toString();
+          provider.store(masterPlaylist, key);
+          storedKeys.add(key);
+        }
+
+        // Upload encryption key
+        if (encryptionKeyFile != null) {
+          String key = prefix + "/" + encryptionKeyFile.getFileName().toString();
+          provider.store(encryptionKeyFile, key);
+          storedKeys.add(key);
+        }
+
         // Upload video variants
         for (VideoAsset asset : transcodedAssets) {
           Path videoFile = asset.path();
           String key = prefix + "/" + videoFile.getFileName().toString();
           provider.store(videoFile, key);
           storedKeys.add(key);
+
+          if (request.generateHls()) {
+            String baseName = videoFile.getFileName().toString().replace(".m3u8", "");
+            try (var stream = Files.list(videoFile.getParent())) {
+              List<Path> tsFiles =
+                  stream
+                      .filter(
+                          p ->
+                              p.getFileName().toString().endsWith(".ts")
+                                  && p.getFileName().toString().startsWith(baseName))
+                      .toList();
+              for (Path tsFile : tsFiles) {
+                String tsKey = prefix + "/" + tsFile.getFileName().toString();
+                provider.store(tsFile, tsKey);
+                storedKeys.add(tsKey);
+              }
+            } catch (IOException ignored) {
+            }
+          }
         }
       } finally {
         // Post-upload cleanup of local files
@@ -189,6 +273,76 @@ public class DefaultVideoProcessor implements VideoProcessor {
 
     log.info("Video processing pipeline finished successfully");
     return new VideoResult(
-        metadata, thumbnail, List.copyOf(transcodedAssets), List.copyOf(storedKeys));
+        metadata,
+        thumbnail,
+        List.copyOf(transcodedAssets),
+        List.copyOf(storedKeys),
+        Optional.ofNullable(masterPlaylist),
+        Optional.ofNullable(encryptionKeyFile));
+  }
+
+  /**
+   * Generates a random 16-byte AES-128 encryption key and a key_info file for FFmpeg.
+   *
+   * @param outputDir directory to write key files into
+   * @return the encryption configuration
+   */
+  private HlsEncryptionConfig generateEncryptionKey(Path outputDir) throws IOException {
+    // Generate 16-byte random AES key
+    byte[] keyBytes = new byte[16];
+    new SecureRandom().nextBytes(keyBytes);
+
+    Path keyFile = outputDir.resolve("encryption.key");
+    Files.write(keyFile, keyBytes);
+
+    // The key URI is a placeholder — the caller (playground/app) sets the real URI
+    // by rewriting the .m3u8 playlist or using a proxy. For FFmpeg, we use a relative path.
+    String keyUri = "encryption.key";
+
+    // Create key_info file:
+    // Line 1: Key URI (what players request)
+    // Line 2: Path to key file (what FFmpeg reads during encoding)
+    Path keyInfoFile = outputDir.resolve("key_info.txt");
+    String keyInfoContent =
+        keyUri + "\n" + keyFile.toAbsolutePath().toString() + "\n";
+    Files.writeString(keyInfoFile, keyInfoContent);
+
+    return new HlsEncryptionConfig(keyFile, keyInfoFile, keyUri);
+  }
+
+  /**
+   * Generates a master HLS playlist (master.m3u8) referencing all resolution variant playlists.
+   *
+   * @param outputDir directory containing the variant playlists
+   * @param assets list of transcoded video assets
+   * @return path to the master playlist
+   */
+  private Path generateMasterPlaylist(Path outputDir, List<VideoAsset> assets) throws IOException {
+    StringBuilder sb = new StringBuilder();
+    sb.append("#EXTM3U\n");
+    sb.append("#EXT-X-VERSION:3\n");
+
+    // Sort by resolution height for proper ordering
+    List<VideoAsset> sorted = new ArrayList<>(assets);
+    sorted.sort(Comparator.comparingInt(a -> a.resolution().height()));
+
+    for (VideoAsset asset : sorted) {
+      VideoResolution res = asset.resolution();
+      long bandwidth = res.defaultBitrateBps();
+      String variantFilename = asset.path().getFileName().toString();
+
+      sb.append("#EXT-X-STREAM-INF:BANDWIDTH=")
+          .append(bandwidth)
+          .append(",RESOLUTION=")
+          .append(res.width())
+          .append("x")
+          .append(res.height())
+          .append("\n");
+      sb.append(variantFilename).append("\n");
+    }
+
+    Path masterPlaylist = outputDir.resolve("master.m3u8");
+    Files.writeString(masterPlaylist, sb.toString());
+    return masterPlaylist;
   }
 }

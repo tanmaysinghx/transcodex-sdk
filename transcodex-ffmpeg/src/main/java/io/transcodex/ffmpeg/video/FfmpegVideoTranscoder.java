@@ -44,13 +44,23 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
     command.add("-i");
     command.add(source.toAbsolutePath().toString());
 
+    // Multi-threaded encoding
+    if (options.threads() > 0) {
+      command.add("-threads");
+      command.add(String.valueOf(options.threads()));
+    }
+
     // Scale
     command.add("-vf");
     command.add("scale=" + options.resolution().width() + ":" + options.resolution().height());
 
     // Video codec
     command.add("-c:v");
-    command.add(options.videoCodec());
+    String vcodec = options.videoCodec();
+    if ("h264".equalsIgnoreCase(vcodec)) {
+      vcodec = "libx264";
+    }
+    command.add(vcodec);
 
     // Video bitrate
     if (options.videoBitrate() != null) {
@@ -60,7 +70,11 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
 
     // Audio codec
     command.add("-c:a");
-    command.add(options.audioCodec());
+    String acodec = options.audioCodec();
+    if ("aac".equalsIgnoreCase(acodec)) {
+      acodec = "aac";
+    }
+    command.add(acodec);
 
     // Audio bitrate
     if (options.audioBitrate() != null) {
@@ -77,6 +91,24 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
     // Fast preset for default H.264
     command.add("-preset");
     command.add("fast");
+
+    if (options.generateHls()) {
+      command.add("-f");
+      command.add("hls");
+      command.add("-hls_time");
+      command.add("4");
+      command.add("-hls_playlist_type");
+      command.add("vod");
+      command.add("-hls_segment_filename");
+      command.add(target.toAbsolutePath().toString().replace(".m3u8", "_%03d.ts"));
+
+      // AES-128 encryption
+      if (options.encryptionConfig().isPresent()) {
+        command.add("-hls_key_info_file");
+        command.add(
+            options.encryptionConfig().get().keyInfoFile().toAbsolutePath().toString());
+      }
+    }
 
     command.add(target.toAbsolutePath().toString());
 
