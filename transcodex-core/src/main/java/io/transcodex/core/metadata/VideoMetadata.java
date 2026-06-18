@@ -7,8 +7,8 @@ import java.util.Optional;
 /** Aggregated container metadata for a video file. */
 public record VideoMetadata(
     Duration duration,
-    long sizeBytes,
-    long bitrateBps,
+    Long sizeBytes,
+    Long bitrateBps,
     String format,
     VideoStreamMetadata videoStream,
     Optional<AudioStreamMetadata> audioStream) {
@@ -20,11 +20,14 @@ public record VideoMetadata(
     if (duration.isNegative() || duration.isZero()) {
       throw new IllegalArgumentException("Duration must be positive");
     }
-    if (sizeBytes <= 0) {
+    if (sizeBytes != null && sizeBytes <= 0) {
       throw new IllegalArgumentException("Size must be positive");
     }
-    if (bitrateBps <= 0) {
+    if (bitrateBps != null && bitrateBps <= 0) {
       throw new IllegalArgumentException("Bitrate must be positive");
+    }
+    if (format.isBlank()) {
+      throw new IllegalArgumentException("Format must not be blank");
     }
   }
 }

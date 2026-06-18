@@ -79,8 +79,9 @@ class DefaultVideoProcessorTest {
     VideoResult result = noStorageProcessor.process(request);
 
     assertThat(result.metadata()).isEqualTo(metadata);
-    assertThat(result.thumbnailPath()).isPresent();
-    assertThat(result.transcodedVideos()).containsKey(VideoResolution.P720);
+    assertThat(result.thumbnail()).isPresent();
+    assertThat(result.transcodedAssets()).hasSize(1);
+    assertThat(result.transcodedAssets().get(0).resolution()).isEqualTo(VideoResolution.P720);
     assertThat(result.storedAssetKeys()).isEmpty();
 
     verify(metadataExtractor).extract(source);
@@ -125,11 +126,11 @@ class DefaultVideoProcessorTest {
     verify(storageProvider, times(2)).store(any(Path.class), any(String.class));
 
     // Verify local files cleanup worked
-    if (result.thumbnailPath().isPresent()) {
-      assertThat(Files.exists(result.thumbnailPath().get())).isFalse();
+    if (result.thumbnail().isPresent()) {
+      assertThat(Files.exists(result.thumbnail().get().path())).isFalse();
     }
-    for (Path path : result.transcodedVideos().values()) {
-      assertThat(Files.exists(path)).isFalse();
+    for (VideoAsset asset : result.transcodedAssets()) {
+      assertThat(Files.exists(asset.path())).isFalse();
     }
   }
 

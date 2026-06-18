@@ -84,11 +84,11 @@ public class DefaultVideoProcessor implements VideoProcessor {
         metadata.format());
 
     List<CompletableFuture<Void>> tasks = new ArrayList<>();
-    Map<VideoResolution, Path> transcodedVideos = new ConcurrentHashMap<>();
+    List<VideoAsset> transcodedAssets = Collections.synchronizedList(new ArrayList<>());
     List<Path> filesToClean = Collections.synchronizedList(new ArrayList<>());
 
     // 2. Generate Thumbnail (Async/Parallel)
-    Optional<Path> thumbnailPath;
+    Optional<Thumbnail> thumbnail;
     if (request.generateThumbnail() && request.thumbnailOptions().isPresent()) {
       ThumbnailOptions thumbOpts = request.thumbnailOptions().get();
       String thumbFilename = "thumbnail_" + System.currentTimeMillis() + "." + thumbOpts.format();
@@ -102,9 +102,16 @@ public class DefaultVideoProcessor implements VideoProcessor {
                 filesToClean.add(targetThumb);
               },
               executorService));
-      thumbnailPath = Optional.of(targetThumb);
+      thumbnail =
+          Optional.of(
+              new Thumbnail(
+                  targetThumb,
+                  thumbOpts.width(),
+                  thumbOpts.height(),
+                  thumbOpts.positionSeconds(),
+                  thumbOpts.format()));
     } else {
-      thumbnailPath = Optional.empty();
+      thumbnail = Optional.empty();
     }
 
     // 3. Transcode Video Variants (Async/Parallel)
@@ -120,7 +127,14 @@ public class DefaultVideoProcessor implements VideoProcessor {
               () -> {
                 log.info("Transcoding video to resolution {}", resolution.label());
                 videoTranscoder.transcode(request.source(), targetVideo, transOpts);
-                transcodedVideos.put(resolution, targetVideo);
+                long size;
+                try {
+                  size = Files.size(targetVideo);
+                } catch (IOException e) {
+                  size = 0L;
+                }
+                transcodedAssets.add(
+                    new VideoAsset(targetVideo, resolution, size, transOpts.videoCodec()));
                 filesToClean.add(targetVideo);
               },
               executorService));
@@ -146,16 +160,16 @@ public class DefaultVideoProcessor implements VideoProcessor {
 
       try {
         // Upload thumbnail
-        if (thumbnailPath.isPresent()) {
-          Path thumbFile = thumbnailPath.get();
+        if (thumbnail.isPresent()) {
+          Path thumbFile = thumbnail.get().path();
           String key = prefix + "/" + thumbFile.getFileName().toString();
           provider.store(thumbFile, key);
           storedKeys.add(key);
         }
 
         // Upload video variants
-        for (Map.Entry<VideoResolution, Path> entry : transcodedVideos.entrySet()) {
-          Path videoFile = entry.getValue();
+        for (VideoAsset asset : transcodedAssets) {
+          Path videoFile = asset.path();
           String key = prefix + "/" + videoFile.getFileName().toString();
           provider.store(videoFile, key);
           storedKeys.add(key);
@@ -175,6 +189,6 @@ public class DefaultVideoProcessor implements VideoProcessor {
 
     log.info("Video processing pipeline finished successfully");
     return new VideoResult(
-        metadata, thumbnailPath, Map.copyOf(transcodedVideos), List.copyOf(storedKeys));
+        metadata, thumbnail, List.copyOf(transcodedAssets), List.copyOf(storedKeys));
   }
 }

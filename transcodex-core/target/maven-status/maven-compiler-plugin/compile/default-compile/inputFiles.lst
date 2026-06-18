@@ -4,9 +4,12 @@ D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\metadata\VideoMetadata.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\metadata\VideoStreamMetadata.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\storage\StorageException.java
+D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\ProcessingStatus.java
+D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\Thumbnail.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\ThumbnailOptions.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\TranscodingException.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\TranscodingOptions.java
+D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\VideoAsset.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\VideoException.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\VideoRequest.java
 D:\Code\Projects\transcodex-sdk\transcodex-core\src\main\java\io\transcodex\core\video\VideoResolution.java

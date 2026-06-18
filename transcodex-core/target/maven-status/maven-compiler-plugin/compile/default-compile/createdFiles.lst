@@ -1,6 +1,9 @@
 io\transcodex\core\encryption\EncryptionException.class
+io\transcodex\core\video\VideoResolution.class
+io\transcodex\core\video\Thumbnail.class
 io\transcodex\core\video\VideoResult.class
 io\transcodex\core\storage\StorageException.class
+io\transcodex\core\video\ProcessingStatus.class
 io\transcodex\core\video\TranscodingException.class
 io\transcodex\core\video\VideoRequest$Builder.class
 io\transcodex\core\metadata\AudioStreamMetadata.class
@@ -8,6 +11,7 @@ io\transcodex\core\video\TranscodingOptions.class
 io\transcodex\core\metadata\MetadataExtractionException.class
 io\transcodex\core\metadata\VideoStreamMetadata.class
 io\transcodex\core\metadata\VideoMetadata.class
+io\transcodex\core\video\VideoAsset.class
 io\transcodex\core\video\TranscodingOptions$Builder.class
 io\transcodex\core\video\VideoRequest.class
 io\transcodex\core\video\ThumbnailOptions.class
