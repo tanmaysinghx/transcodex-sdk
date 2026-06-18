@@ -19,3 +19,7 @@ release-artifacts/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playground Sandbox
+transcodex-playground/
+

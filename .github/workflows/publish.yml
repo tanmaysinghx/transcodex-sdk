@@ -1,0 +1,57 @@
+name: Publish SDK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    name: Build, Test & Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25 & Maven Repository Credentials
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: 'github'
+          server-username: ${{ github.actor }}
+          server-password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install FFmpeg & FFprobe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build, Test, and Deploy to GitHub Packages
+        run: mvn clean deploy -DskipTests=false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate and Collect Artifact Jars
+        run: |
+          mkdir release-artifacts
+          cp transcodex-api/target/transcodex-api-*.jar release-artifacts/
+          cp transcodex-core/target/transcodex-core-*.jar release-artifacts/
+          cp transcodex-ffmpeg/target/transcodex-ffmpeg-*.jar release-artifacts/
+          cp transcodex-storage/target/transcodex-storage-*.jar release-artifacts/
+          cp transcodex-starter/target/transcodex-starter-*.jar release-artifacts/
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*.jar
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

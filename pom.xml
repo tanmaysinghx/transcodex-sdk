@@ -23,6 +23,7 @@
         <module>transcodex-ffmpeg</module>
         <module>transcodex-storage</module>
         <module>transcodex-benchmarks</module>
+        <module>transcodex-starter</module>
     </modules>
 
     <properties>
@@ -190,5 +191,18 @@
         </plugins>
 
     </build>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages Releases</name>
+            <url>https://maven.pkg.github.com/tanmaysinghx/transcodex-sdk</url>
+        </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <name>GitHub Packages Snapshots</name>
+            <url>https://maven.pkg.github.com/tanmaysinghx/transcodex-sdk</url>
+        </snapshotRepository>
+    </distributionManagement>
 
 </project>

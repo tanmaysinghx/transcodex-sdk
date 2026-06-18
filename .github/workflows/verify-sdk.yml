@@ -1,0 +1,31 @@
+name: Verify SDK Usability
+
+on:
+  workflow_run:
+    workflows: ["Publish SDK"]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify Package Usability
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25 & Credentials
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          server-id: 'github'
+          server-username: ${{ github.actor }}
+          server-password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify Consumer Compilation
+        run: |
+          mvn clean compile -f transcodex-playground/pom.xml
