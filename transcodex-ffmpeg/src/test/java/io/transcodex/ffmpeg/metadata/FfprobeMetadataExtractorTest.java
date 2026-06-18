@@ -28,7 +28,7 @@ class FfprobeMetadataExtractorTest {
   @BeforeEach
   void setUp() throws Exception {
     executor = mock(FfmpegExecutor.class);
-    extractor = new FfprobeMetadataExtractor(executor);
+    extractor = new FfprobeMetadataExtractor(executor, new JacksonMetadataParser());
     testFile = Files.createFile(tempDir.resolve("test.mp4"));
   }
 
