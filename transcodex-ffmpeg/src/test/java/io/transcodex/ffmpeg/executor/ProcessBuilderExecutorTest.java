@@ -17,9 +17,27 @@ class ProcessBuilderExecutorTest {
     executor = new ProcessBuilderExecutor();
   }
 
+  private List<String> getEchoCommand(String message) {
+    String os = System.getProperty("os.name").toLowerCase();
+    if (os.contains("win")) {
+      return List.of("cmd.exe", "/c", "echo " + message);
+    } else {
+      return List.of("sh", "-c", "echo " + message);
+    }
+  }
+
+  private List<String> getFailureCommand() {
+    String os = System.getProperty("os.name").toLowerCase();
+    if (os.contains("win")) {
+      return List.of("cmd.exe", "/c", "dir non-existent-directory-12345");
+    } else {
+      return List.of("sh", "-c", "ls non-existent-directory-12345");
+    }
+  }
+
   @Test
   void shouldSuccessfullyExecuteCommandAndCaptureOutput() throws Exception {
-    List<String> command = List.of("cmd.exe", "/c", "echo hello-transcodex");
+    List<String> command = getEchoCommand("hello-transcodex");
     CommandResult result = executor.execute(command);
 
     assertThat(result.exitCode()).isEqualTo(0);
@@ -30,7 +48,7 @@ class ProcessBuilderExecutorTest {
 
   @Test
   void shouldCaptureStderrForFailedCommand() throws Exception {
-    List<String> command = List.of("cmd.exe", "/c", "dir non-existent-directory-12345");
+    List<String> command = getFailureCommand();
     CommandResult result = executor.execute(command);
 
     assertThat(result.exitCode()).isNotZero();
