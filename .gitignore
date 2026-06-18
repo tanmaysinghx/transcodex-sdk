@@ -1,0 +1,21 @@
+# Maven
+target/
+*.class
+dependency-reduced-pom.xml
+
+# Logging & Reports
+*.log
+benchmarks-result.json
+benchmarks-report.json
+release-artifacts/
+
+# IDEs
+.idea/
+*.iml
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
