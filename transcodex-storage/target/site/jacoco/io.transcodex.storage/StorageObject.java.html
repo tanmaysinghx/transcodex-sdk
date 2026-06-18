@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StorageObject.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">transcodex-storage</a> &gt; <a href="index.source.html" class="el_package">io.transcodex.storage</a> &gt; <span class="el_source">StorageObject.java</span></div><h1>StorageObject.java</h1><pre class="source lang-java linenums">package io.transcodex.storage;
+
+import java.net.URI;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+
+/** Represents metadata and reference information of an asset in a storage provider. */
+public record StorageObject(
+    String key,
+    Long sizeBytes,
+    String contentType,
+    URI uri,
+    Optional&lt;String&gt; checksum,
+    Instant createdAt) {
+
+<span class="fc" id="L17">  public StorageObject {</span>
+<span class="fc" id="L18">    Objects.requireNonNull(key, &quot;Storage key must not be null&quot;);</span>
+<span class="fc" id="L19">    Objects.requireNonNull(contentType, &quot;Content type must not be null&quot;);</span>
+<span class="fc" id="L20">    Objects.requireNonNull(uri, &quot;URI must not be null&quot;);</span>
+<span class="fc" id="L21">    Objects.requireNonNull(checksum, &quot;Checksum wrapper must not be null&quot;);</span>
+<span class="fc" id="L22">    Objects.requireNonNull(createdAt, &quot;Creation timestamp must not be null&quot;);</span>
+
+<span class="fc bfc" id="L24" title="All 2 branches covered.">    if (key.isBlank()) {</span>
+<span class="fc" id="L25">      throw new IllegalArgumentException(&quot;Storage key must not be blank&quot;);</span>
+    }
+<span class="pc bpc" id="L27" title="1 of 4 branches missed.">    if (sizeBytes != null &amp;&amp; sizeBytes &lt; 0) {</span>
+<span class="fc" id="L28">      throw new IllegalArgumentException(&quot;Size must be non-negative&quot;);</span>
+    }
+<span class="fc bfc" id="L30" title="All 2 branches covered.">    if (contentType.isBlank()) {</span>
+<span class="fc" id="L31">      throw new IllegalArgumentException(&quot;Content type must not be blank&quot;);</span>
+    }
+<span class="fc" id="L33">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

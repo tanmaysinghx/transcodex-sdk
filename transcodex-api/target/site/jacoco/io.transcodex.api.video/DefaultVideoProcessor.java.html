@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DefaultVideoProcessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">transcodex-api</a> &gt; <a href="index.source.html" class="el_package">io.transcodex.api.video</a> &gt; <span class="el_source">DefaultVideoProcessor.java</span></div><h1>DefaultVideoProcessor.java</h1><pre class="source lang-java linenums">package io.transcodex.api.video;
+
+import io.transcodex.api.metadata.MetadataExtractor;
+import io.transcodex.api.storage.StorageProvider;
+import io.transcodex.core.metadata.VideoMetadata;
+import io.transcodex.core.video.*;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/** Default orchestrator executing the video transcode/thumbnail workflow. */
+public class DefaultVideoProcessor implements VideoProcessor {
+
+<span class="fc" id="L18">  private static final Logger log = LoggerFactory.getLogger(DefaultVideoProcessor.class);</span>
+
+  private final MetadataExtractor metadataExtractor;
+  private final VideoTranscoder videoTranscoder;
+  private final ThumbnailGenerator thumbnailGenerator;
+  private final Optional&lt;StorageProvider&gt; storageProvider;
+  private final ExecutorService executorService;
+
+  public DefaultVideoProcessor(
+      MetadataExtractor metadataExtractor,
+      VideoTranscoder videoTranscoder,
+      ThumbnailGenerator thumbnailGenerator) {
+<span class="fc" id="L30">    this(</span>
+        metadataExtractor,
+        videoTranscoder,
+        thumbnailGenerator,
+<span class="fc" id="L34">        Optional.empty(),</span>
+<span class="fc" id="L35">        ForkJoinPool.commonPool());</span>
+<span class="fc" id="L36">  }</span>
+
+  public DefaultVideoProcessor(
+      MetadataExtractor metadataExtractor,
+      VideoTranscoder videoTranscoder,
+      ThumbnailGenerator thumbnailGenerator,
+      StorageProvider storageProvider) {
+<span class="nc" id="L43">    this(</span>
+        metadataExtractor,
+        videoTranscoder,
+        thumbnailGenerator,
+<span class="nc" id="L47">        Optional.ofNullable(storageProvider),</span>
+<span class="nc" id="L48">        ForkJoinPool.commonPool());</span>
+<span class="nc" id="L49">  }</span>
+
+  public DefaultVideoProcessor(
+      MetadataExtractor metadataExtractor,
+      VideoTranscoder videoTranscoder,
+      ThumbnailGenerator thumbnailGenerator,
+      Optional&lt;StorageProvider&gt; storageProvider,
+<span class="fc" id="L56">      ExecutorService executorService) {</span>
+<span class="fc" id="L57">    this.metadataExtractor =</span>
+<span class="fc" id="L58">        Objects.requireNonNull(metadataExtractor, &quot;metadataExtractor must not be null&quot;);</span>
+<span class="fc" id="L59">    this.videoTranscoder =</span>
+<span class="fc" id="L60">        Objects.requireNonNull(videoTranscoder, &quot;videoTranscoder must not be null&quot;);</span>
+<span class="fc" id="L61">    this.thumbnailGenerator =</span>
+<span class="fc" id="L62">        Objects.requireNonNull(thumbnailGenerator, &quot;thumbnailGenerator must not be null&quot;);</span>
+<span class="fc" id="L63">    this.storageProvider =</span>
+<span class="fc" id="L64">        Objects.requireNonNull(storageProvider, &quot;storageProvider must not be null&quot;);</span>
+<span class="fc" id="L65">    this.executorService =</span>
+<span class="fc" id="L66">        Objects.requireNonNull(executorService, &quot;executorService must not be null&quot;);</span>
+<span class="fc" id="L67">  }</span>
+
+  @Override
+  public VideoResult process(VideoRequest request) throws VideoException {
+<span class="fc" id="L71">    log.info(&quot;Starting video processing pipeline for source: {}&quot;, request.source());</span>
+
+    try {
+<span class="fc" id="L74">      Files.createDirectories(request.outputDir());</span>
+<span class="nc" id="L75">    } catch (IOException e) {</span>
+<span class="nc" id="L76">      throw new VideoException(&quot;Failed to create output directory: &quot; + request.outputDir(), e);</span>
+<span class="fc" id="L77">    }</span>
+
+    // 1. Extract Metadata
+<span class="fc" id="L80">    VideoMetadata metadata = metadataExtractor.extract(request.source());</span>
+<span class="fc" id="L81">    log.info(</span>
+        &quot;Successfully extracted metadata: duration={}s, format={}&quot;,
+<span class="fc" id="L83">        metadata.duration().toSeconds(),</span>
+<span class="fc" id="L84">        metadata.format());</span>
+
+<span class="fc" id="L86">    List&lt;CompletableFuture&lt;Void&gt;&gt; tasks = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L87">    List&lt;VideoAsset&gt; transcodedAssets = Collections.synchronizedList(new ArrayList&lt;&gt;());</span>
+<span class="fc" id="L88">    List&lt;Path&gt; filesToClean = Collections.synchronizedList(new ArrayList&lt;&gt;());</span>
+
+    // 2. Generate Thumbnail (Async/Parallel)
+    Optional&lt;Thumbnail&gt; thumbnail;
+<span class="pc bpc" id="L92" title="1 of 4 branches missed.">    if (request.generateThumbnail() &amp;&amp; request.thumbnailOptions().isPresent()) {</span>
+<span class="fc" id="L93">      ThumbnailOptions thumbOpts = request.thumbnailOptions().get();</span>
+<span class="fc" id="L94">      String thumbFilename = &quot;thumbnail_&quot; + System.currentTimeMillis() + &quot;.&quot; + thumbOpts.format();</span>
+<span class="fc" id="L95">      Path targetThumb = request.outputDir().resolve(thumbFilename);</span>
+
+<span class="fc" id="L97">      tasks.add(</span>
+<span class="fc" id="L98">          CompletableFuture.runAsync(</span>
+              () -&gt; {
+<span class="fc" id="L100">                log.info(&quot;Generating thumbnail at position {}s&quot;, thumbOpts.positionSeconds());</span>
+<span class="fc" id="L101">                thumbnailGenerator.generate(request.source(), targetThumb, thumbOpts);</span>
+<span class="fc" id="L102">                filesToClean.add(targetThumb);</span>
+<span class="fc" id="L103">              },</span>
+              executorService));
+<span class="fc" id="L105">      thumbnail =</span>
+<span class="fc" id="L106">          Optional.of(</span>
+              new Thumbnail(
+                  targetThumb,
+<span class="fc" id="L109">                  thumbOpts.width(),</span>
+<span class="fc" id="L110">                  thumbOpts.height(),</span>
+<span class="fc" id="L111">                  thumbOpts.positionSeconds(),</span>
+<span class="fc" id="L112">                  thumbOpts.format()));</span>
+<span class="fc" id="L113">    } else {</span>
+<span class="fc" id="L114">      thumbnail = Optional.empty();</span>
+    }
+
+    // 3. Transcode Video Variants (Async/Parallel)
+<span class="fc bfc" id="L118" title="All 2 branches covered.">    for (VideoResolution resolution : request.resolutions()) {</span>
+<span class="fc" id="L119">      String videoFilename =</span>
+<span class="fc" id="L120">          &quot;transcoded_&quot; + resolution.label() + &quot;_&quot; + System.currentTimeMillis() + &quot;.mp4&quot;;</span>
+<span class="fc" id="L121">      Path targetVideo = request.outputDir().resolve(videoFilename);</span>
+
+<span class="fc" id="L123">      TranscodingOptions transOpts = TranscodingOptions.builder().resolution(resolution).build();</span>
+
+<span class="fc" id="L125">      tasks.add(</span>
+<span class="fc" id="L126">          CompletableFuture.runAsync(</span>
+              () -&gt; {
+<span class="fc" id="L128">                log.info(&quot;Transcoding video to resolution {}&quot;, resolution.label());</span>
+<span class="fc" id="L129">                videoTranscoder.transcode(request.source(), targetVideo, transOpts);</span>
+                long size;
+                try {
+<span class="nc" id="L132">                  size = Files.size(targetVideo);</span>
+<span class="fc" id="L133">                } catch (IOException e) {</span>
+<span class="fc" id="L134">                  size = 0L;</span>
+<span class="nc" id="L135">                }</span>
+<span class="fc" id="L136">                transcodedAssets.add(</span>
+<span class="fc" id="L137">                    new VideoAsset(targetVideo, resolution, size, transOpts.videoCodec()));</span>
+<span class="fc" id="L138">                filesToClean.add(targetVideo);</span>
+<span class="fc" id="L139">              },</span>
+              executorService));
+<span class="fc" id="L141">    }</span>
+
+    // Wait for all tasks to complete
+    try {
+<span class="fc" id="L145">      CompletableFuture.allOf(tasks.toArray(new CompletableFuture[0])).join();</span>
+<span class="fc" id="L146">    } catch (CompletionException e) {</span>
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">      if (e.getCause() instanceof VideoException) {</span>
+<span class="fc" id="L148">        throw (VideoException) e.getCause();</span>
+      }
+<span class="nc" id="L150">      throw new VideoException(&quot;Error during parallel transcoding/thumbnail tasks&quot;, e.getCause());</span>
+<span class="fc" id="L151">    }</span>
+
+    // 4. Upload Assets to Storage if storageProvider and storagePrefix are present
+<span class="fc" id="L154">    List&lt;String&gt; storedKeys = new ArrayList&lt;&gt;();</span>
+<span class="pc bpc" id="L155" title="1 of 4 branches missed.">    if (storageProvider.isPresent() &amp;&amp; request.storagePrefix().isPresent()) {</span>
+<span class="fc" id="L156">      String prefix = request.storagePrefix().get();</span>
+<span class="fc" id="L157">      log.info(&quot;Uploading assets to storage with prefix: {}&quot;, prefix);</span>
+
+<span class="fc" id="L159">      StorageProvider provider = storageProvider.get();</span>
+
+      try {
+        // Upload thumbnail
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">        if (thumbnail.isPresent()) {</span>
+<span class="fc" id="L164">          Path thumbFile = thumbnail.get().path();</span>
+<span class="fc" id="L165">          String key = prefix + &quot;/&quot; + thumbFile.getFileName().toString();</span>
+<span class="fc" id="L166">          provider.store(thumbFile, key);</span>
+<span class="fc" id="L167">          storedKeys.add(key);</span>
+        }
+
+        // Upload video variants
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        for (VideoAsset asset : transcodedAssets) {</span>
+<span class="fc" id="L172">          Path videoFile = asset.path();</span>
+<span class="fc" id="L173">          String key = prefix + &quot;/&quot; + videoFile.getFileName().toString();</span>
+<span class="fc" id="L174">          provider.store(videoFile, key);</span>
+<span class="fc" id="L175">          storedKeys.add(key);</span>
+<span class="fc" id="L176">        }</span>
+      } finally {
+        // Post-upload cleanup of local files
+<span class="fc" id="L179">        log.info(&quot;Cleaning up temporary local files after upload&quot;);</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">        for (Path path : filesToClean) {</span>
+          try {
+<span class="fc" id="L182">            Files.deleteIfExists(path);</span>
+<span class="nc" id="L183">          } catch (IOException e) {</span>
+<span class="nc" id="L184">            log.warn(&quot;Failed to delete temporary file: {}&quot;, path, e);</span>
+<span class="fc" id="L185">          }</span>
+<span class="fc" id="L186">        }</span>
+      }
+    }
+
+<span class="fc" id="L190">    log.info(&quot;Video processing pipeline finished successfully&quot;);</span>
+<span class="fc" id="L191">    return new VideoResult(</span>
+<span class="fc" id="L192">        metadata, thumbnail, List.copyOf(transcodedAssets), List.copyOf(storedKeys));</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>

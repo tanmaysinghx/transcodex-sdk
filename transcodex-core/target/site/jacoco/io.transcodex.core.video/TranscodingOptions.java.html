@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TranscodingOptions.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">transcodex-core</a> &gt; <a href="index.source.html" class="el_package">io.transcodex.core.video</a> &gt; <span class="el_source">TranscodingOptions.java</span></div><h1>TranscodingOptions.java</h1><pre class="source lang-java linenums">package io.transcodex.core.video;
+
+import java.util.Objects;
+
+/** Configuration options for video transcoding processes. */
+public record TranscodingOptions(
+    VideoResolution resolution,
+    String videoCodec,
+    String audioCodec,
+    Double frameRate,
+    Long videoBitrate,
+    Long audioBitrate,
+    boolean gpuAccelerated) {
+<span class="nc" id="L14">  public TranscodingOptions {</span>
+<span class="nc" id="L15">    Objects.requireNonNull(resolution, &quot;Resolution must not be null&quot;);</span>
+<span class="nc" id="L16">    Objects.requireNonNull(videoCodec, &quot;Video codec must not be null&quot;);</span>
+<span class="nc" id="L17">    Objects.requireNonNull(audioCodec, &quot;Audio codec must not be null&quot;);</span>
+<span class="nc" id="L18">  }</span>
+
+  public static Builder builder() {
+<span class="nc" id="L21">    return new Builder();</span>
+  }
+
+<span class="nc" id="L24">  public static class Builder {</span>
+    private VideoResolution resolution;
+<span class="nc" id="L26">    private String videoCodec = &quot;h264&quot;;</span>
+<span class="nc" id="L27">    private String audioCodec = &quot;aac&quot;;</span>
+    private Double frameRate;
+    private Long videoBitrate;
+    private Long audioBitrate;
+<span class="nc" id="L31">    private boolean gpuAccelerated = false;</span>
+
+    public Builder resolution(VideoResolution resolution) {
+<span class="nc" id="L34">      this.resolution = resolution;</span>
+<span class="nc" id="L35">      return this;</span>
+    }
+
+    public Builder videoCodec(String videoCodec) {
+<span class="nc" id="L39">      this.videoCodec = videoCodec;</span>
+<span class="nc" id="L40">      return this;</span>
+    }
+
+    public Builder audioCodec(String audioCodec) {
+<span class="nc" id="L44">      this.audioCodec = audioCodec;</span>
+<span class="nc" id="L45">      return this;</span>
+    }
+
+    public Builder frameRate(Double frameRate) {
+<span class="nc" id="L49">      this.frameRate = frameRate;</span>
+<span class="nc" id="L50">      return this;</span>
+    }
+
+    public Builder videoBitrate(Long videoBitrate) {
+<span class="nc" id="L54">      this.videoBitrate = videoBitrate;</span>
+<span class="nc" id="L55">      return this;</span>
+    }
+
+    public Builder audioBitrate(Long audioBitrate) {
+<span class="nc" id="L59">      this.audioBitrate = audioBitrate;</span>
+<span class="nc" id="L60">      return this;</span>
+    }
+
+    public Builder gpuAccelerated(boolean gpuAccelerated) {
+<span class="nc" id="L64">      this.gpuAccelerated = gpuAccelerated;</span>
+<span class="nc" id="L65">      return this;</span>
+    }
+
+    public TranscodingOptions build() {
+<span class="nc" id="L69">      Objects.requireNonNull(resolution, &quot;Resolution is required to build TranscodingOptions&quot;);</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">      if (videoBitrate == null) {</span>
+<span class="nc" id="L71">        videoBitrate = resolution.defaultBitrateBps();</span>
+      }
+<span class="nc" id="L73">      return new TranscodingOptions(</span>
+          resolution,
+          videoCodec,
+          audioCodec,
+          frameRate,
+          videoBitrate,
+          audioBitrate,
+          gpuAccelerated);
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.13.202504020838</span></div></body></html>
