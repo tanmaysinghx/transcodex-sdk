@@ -43,15 +43,18 @@ public final class EmbeddedFfmpegResolver {
         if (ffmpegExtracted && ffprobeExtracted) {
           ffmpegPath = ffmpegFile.toAbsolutePath().toString();
           ffprobePath = ffprobeFile.toAbsolutePath().toString();
-          log.info("Successfully resolved embedded Windows binaries: {}, {}", ffmpegPath, ffprobePath);
+          log.info(
+              "Successfully resolved embedded Windows binaries: {}, {}", ffmpegPath, ffprobePath);
         } else {
-          log.warn("Embedded FFmpeg/FFprobe binaries not found in classpath resources. Falling back to system PATH.");
+          log.warn(
+              "Embedded FFmpeg/FFprobe binaries not found in classpath resources. Falling back to system PATH.");
         }
       } catch (Exception e) {
         log.error("Failed to resolve embedded FFmpeg binaries. Falling back to system PATH.", e);
       }
     } else {
-      log.info("Non-Windows OS detected ({}). Falling back to system PATH for ffmpeg and ffprobe.", OS);
+      log.info(
+          "Non-Windows OS detected ({}). Falling back to system PATH for ffmpeg and ffprobe.", OS);
     }
     resolved = true;
   }

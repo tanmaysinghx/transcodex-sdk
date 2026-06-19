@@ -14,7 +14,8 @@ public record TranscodingOptions(
     boolean gpuAccelerated,
     boolean generateHls,
     int threads,
-    Optional<HlsEncryptionConfig> encryptionConfig) {
+    Optional<HlsEncryptionConfig> encryptionConfig,
+    long timeoutSeconds) {
   public TranscodingOptions {
     Objects.requireNonNull(resolution, "Resolution must not be null");
     Objects.requireNonNull(videoCodec, "Video codec must not be null");
@@ -37,6 +38,7 @@ public record TranscodingOptions(
     private boolean generateHls = false;
     private int threads = 0;
     private HlsEncryptionConfig encryptionConfig;
+    private long timeoutSeconds = 1800; // Default: 30 minutes
 
     public Builder resolution(VideoResolution resolution) {
       this.resolution = resolution;
@@ -88,6 +90,11 @@ public record TranscodingOptions(
       return this;
     }
 
+    public Builder timeoutSeconds(long timeoutSeconds) {
+      this.timeoutSeconds = timeoutSeconds;
+      return this;
+    }
+
     public TranscodingOptions build() {
       Objects.requireNonNull(resolution, "Resolution is required to build TranscodingOptions");
       if (videoBitrate == null) {
@@ -103,7 +110,8 @@ public record TranscodingOptions(
           gpuAccelerated,
           generateHls,
           threads,
-          Optional.ofNullable(encryptionConfig));
+          Optional.ofNullable(encryptionConfig),
+          timeoutSeconds);
     }
   }
 }

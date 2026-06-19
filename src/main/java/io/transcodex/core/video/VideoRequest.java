@@ -16,7 +16,9 @@ public record VideoRequest(
     Optional<String> storagePrefix,
     boolean generateHls,
     boolean encryptChunks,
-    int encodingThreads) {
+    int encodingThreads,
+    int maxConcurrentTranscodes,
+    long processTimeoutSeconds) {
   public VideoRequest {
     Objects.requireNonNull(source, "Source path must not be null");
     Objects.requireNonNull(outputDir, "Output directory must not be null");
@@ -42,12 +44,14 @@ public record VideoRequest(
     builder.encryptChunks(config.isDefaultEncryptChunks());
     builder.encodingThreads(config.getDefaultEncodingThreads());
     builder.generateThumbnail(config.isDefaultGenerateThumbnail());
-    builder.thumbnailOptions(new ThumbnailOptions(
-        config.getDefaultThumbnailWidth(),
-        config.getDefaultThumbnailHeight(),
-        config.getDefaultThumbnailPositionSeconds(),
-        config.getDefaultThumbnailFormat()
-    ));
+    builder.thumbnailOptions(
+        new ThumbnailOptions(
+            config.getDefaultThumbnailWidth(),
+            config.getDefaultThumbnailHeight(),
+            config.getDefaultThumbnailPositionSeconds(),
+            config.getDefaultThumbnailFormat()));
+    builder.maxConcurrentTranscodes(config.getDefaultMaxConcurrentTranscodes());
+    builder.processTimeoutSeconds(config.getDefaultProcessTimeoutSeconds());
     return builder;
   }
 
@@ -61,6 +65,8 @@ public record VideoRequest(
     private boolean generateHls = false;
     private boolean encryptChunks = false;
     private int encodingThreads = 0;
+    private int maxConcurrentTranscodes = 0;
+    private long processTimeoutSeconds = 1800;
 
     public Builder source(Path source) {
       this.source = source;
@@ -116,6 +122,16 @@ public record VideoRequest(
       return this;
     }
 
+    public Builder maxConcurrentTranscodes(int maxConcurrentTranscodes) {
+      this.maxConcurrentTranscodes = maxConcurrentTranscodes;
+      return this;
+    }
+
+    public Builder processTimeoutSeconds(long processTimeoutSeconds) {
+      this.processTimeoutSeconds = processTimeoutSeconds;
+      return this;
+    }
+
     public VideoRequest build() {
       Objects.requireNonNull(source, "Source path must not be null");
       Objects.requireNonNull(outputDir, "Output directory must not be null");
@@ -130,6 +146,10 @@ public record VideoRequest(
         generateHls = true;
       }
 
+      if (maxConcurrentTranscodes <= 0) {
+        maxConcurrentTranscodes = Math.max(1, Runtime.getRuntime().availableProcessors() / 4);
+      }
+
       return new VideoRequest(
           source,
           outputDir,
@@ -139,7 +159,9 @@ public record VideoRequest(
           Optional.ofNullable(storagePrefix),
           generateHls,
           encryptChunks,
-          encodingThreads);
+          encodingThreads,
+          maxConcurrentTranscodes,
+          processTimeoutSeconds);
     }
   }
 }

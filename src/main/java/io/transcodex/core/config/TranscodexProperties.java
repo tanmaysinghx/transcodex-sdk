@@ -16,7 +16,8 @@ public class TranscodexProperties {
 
   private static final Logger log = LoggerFactory.getLogger(TranscodexProperties.class);
 
-  private List<VideoResolution> defaultResolutions = List.of(VideoResolution.P360, VideoResolution.P720);
+  private List<VideoResolution> defaultResolutions =
+      List.of(VideoResolution.P360, VideoResolution.P720);
   private boolean defaultEncryptChunks = false;
   private int defaultEncodingThreads = 4;
   private boolean defaultGenerateHls = true;
@@ -26,12 +27,18 @@ public class TranscodexProperties {
   private String defaultThumbnailFormat = "jpg";
   private double defaultThumbnailPositionSeconds = 0.5;
 
+  // Optimized concurrency and timeout settings
+  private int defaultMaxConcurrentTranscodes =
+      Math.max(1, Runtime.getRuntime().availableProcessors() / 4);
+  private long defaultProcessTimeoutSeconds = 1800; // 30 minutes
+
   public TranscodexProperties() {
     loadFromClasspath();
   }
 
   private void loadFromClasspath() {
-    try (InputStream in = TranscodexProperties.class.getResourceAsStream("/transcodex.properties")) {
+    try (InputStream in =
+        TranscodexProperties.class.getResourceAsStream("/transcodex.properties")) {
       if (in == null) {
         log.debug("No transcodex.properties found on classpath, using default SDK settings.");
         return;
@@ -41,35 +48,78 @@ public class TranscodexProperties {
 
       String resProp = props.getProperty("transcodex.default.resolutions");
       if (resProp != null && !resProp.isBlank()) {
-        defaultResolutions = Arrays.stream(resProp.split(","))
-            .map(String::trim)
-            .map(String::toUpperCase)
-            .map(val -> {
-              switch (val) {
-                case "360P": return VideoResolution.P360;
-                case "480P": return VideoResolution.P480;
-                case "720P": return VideoResolution.P720;
-                case "1080P": return VideoResolution.P1080;
-                case "2160P":
-                case "4K": return VideoResolution.P2160;
-                case "4320P":
-                case "8K": return VideoResolution.P4320;
-                default:
-                  log.warn("Unknown resolution '{}', using 720p", val);
-                  return VideoResolution.P720;
-              }
-            })
-            .toList();
+        defaultResolutions =
+            Arrays.stream(resProp.split(","))
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .map(
+                    val -> {
+                      switch (val) {
+                        case "360P":
+                          return VideoResolution.P360;
+                        case "480P":
+                          return VideoResolution.P480;
+                        case "720P":
+                          return VideoResolution.P720;
+                        case "1080P":
+                          return VideoResolution.P1080;
+                        case "2160P":
+                        case "4K":
+                          return VideoResolution.P2160;
+                        case "4320P":
+                        case "8K":
+                          return VideoResolution.P4320;
+                        default:
+                          log.warn("Unknown resolution '{}', using 720p", val);
+                          return VideoResolution.P720;
+                      }
+                    })
+                .toList();
       }
 
-      defaultEncryptChunks = Boolean.parseBoolean(props.getProperty("transcodex.default.encrypt-chunks", String.valueOf(defaultEncryptChunks)));
-      defaultEncodingThreads = Integer.parseInt(props.getProperty("transcodex.default.encoding-threads", String.valueOf(defaultEncodingThreads)));
-      defaultGenerateHls = Boolean.parseBoolean(props.getProperty("transcodex.default.generate-hls", String.valueOf(defaultGenerateHls)));
-      defaultGenerateThumbnail = Boolean.parseBoolean(props.getProperty("transcodex.default.generate-thumbnail", String.valueOf(defaultGenerateThumbnail)));
-      defaultThumbnailWidth = Integer.parseInt(props.getProperty("transcodex.default.thumbnail.width", String.valueOf(defaultThumbnailWidth)));
-      defaultThumbnailHeight = Integer.parseInt(props.getProperty("transcodex.default.thumbnail.height", String.valueOf(defaultThumbnailHeight)));
-      defaultThumbnailFormat = props.getProperty("transcodex.default.thumbnail.format", defaultThumbnailFormat);
-      defaultThumbnailPositionSeconds = Double.parseDouble(props.getProperty("transcodex.default.thumbnail.position-seconds", String.valueOf(defaultThumbnailPositionSeconds)));
+      defaultEncryptChunks =
+          Boolean.parseBoolean(
+              props.getProperty(
+                  "transcodex.default.encrypt-chunks", String.valueOf(defaultEncryptChunks)));
+      defaultEncodingThreads =
+          Integer.parseInt(
+              props.getProperty(
+                  "transcodex.default.encoding-threads", String.valueOf(defaultEncodingThreads)));
+      defaultGenerateHls =
+          Boolean.parseBoolean(
+              props.getProperty(
+                  "transcodex.default.generate-hls", String.valueOf(defaultGenerateHls)));
+      defaultGenerateThumbnail =
+          Boolean.parseBoolean(
+              props.getProperty(
+                  "transcodex.default.generate-thumbnail",
+                  String.valueOf(defaultGenerateThumbnail)));
+      defaultThumbnailWidth =
+          Integer.parseInt(
+              props.getProperty(
+                  "transcodex.default.thumbnail.width", String.valueOf(defaultThumbnailWidth)));
+      defaultThumbnailHeight =
+          Integer.parseInt(
+              props.getProperty(
+                  "transcodex.default.thumbnail.height", String.valueOf(defaultThumbnailHeight)));
+      defaultThumbnailFormat =
+          props.getProperty("transcodex.default.thumbnail.format", defaultThumbnailFormat);
+      defaultThumbnailPositionSeconds =
+          Double.parseDouble(
+              props.getProperty(
+                  "transcodex.default.thumbnail.position-seconds",
+                  String.valueOf(defaultThumbnailPositionSeconds)));
+
+      defaultMaxConcurrentTranscodes =
+          Integer.parseInt(
+              props.getProperty(
+                  "transcodex.default.max-concurrent-transcodes",
+                  String.valueOf(defaultMaxConcurrentTranscodes)));
+      defaultProcessTimeoutSeconds =
+          Long.parseLong(
+              props.getProperty(
+                  "transcodex.default.process-timeout-seconds",
+                  String.valueOf(defaultProcessTimeoutSeconds)));
 
       log.info("Successfully loaded configuration from transcodex.properties");
     } catch (Exception e) {
@@ -147,5 +197,21 @@ public class TranscodexProperties {
 
   public void setDefaultThumbnailPositionSeconds(double defaultThumbnailPositionSeconds) {
     this.defaultThumbnailPositionSeconds = defaultThumbnailPositionSeconds;
+  }
+
+  public int getDefaultMaxConcurrentTranscodes() {
+    return defaultMaxConcurrentTranscodes;
+  }
+
+  public void setDefaultMaxConcurrentTranscodes(int defaultMaxConcurrentTranscodes) {
+    this.defaultMaxConcurrentTranscodes = defaultMaxConcurrentTranscodes;
+  }
+
+  public long getDefaultProcessTimeoutSeconds() {
+    return defaultProcessTimeoutSeconds;
+  }
+
+  public void setDefaultProcessTimeoutSeconds(long defaultProcessTimeoutSeconds) {
+    this.defaultProcessTimeoutSeconds = defaultProcessTimeoutSeconds;
   }
 }

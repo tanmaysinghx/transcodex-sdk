@@ -16,8 +16,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 /**
- * Spring Boot auto-configuration class that registers a default {@link VideoProcessor} bean
- * and exposes SDK settings as {@link TranscodexProperties}.
+ * Spring Boot auto-configuration class that registers a default {@link VideoProcessor} bean and
+ * exposes SDK settings as {@link TranscodexProperties}.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(TranscodeXAutoConfiguration.SpringTranscodexProperties.class)
@@ -42,12 +42,12 @@ public class TranscodeXAutoConfiguration {
     ProcessBuilderExecutor executor = new ProcessBuilderExecutor();
     JacksonMetadataParser parser = new JacksonMetadataParser();
 
-    FfprobeMetadataExtractor extractor = new FfprobeMetadataExtractor(
-        executor, parser, EmbeddedFfmpegResolver.getFfprobePath());
-    FfmpegVideoTranscoder transcoder = new FfmpegVideoTranscoder(
-        executor, EmbeddedFfmpegResolver.getFfmpegPath());
-    FfmpegThumbnailGenerator generator = new FfmpegThumbnailGenerator(
-        executor, EmbeddedFfmpegResolver.getFfmpegPath());
+    FfprobeMetadataExtractor extractor =
+        new FfprobeMetadataExtractor(executor, parser, EmbeddedFfmpegResolver.getFfprobePath());
+    FfmpegVideoTranscoder transcoder =
+        new FfmpegVideoTranscoder(executor, EmbeddedFfmpegResolver.getFfmpegPath());
+    FfmpegThumbnailGenerator generator =
+        new FfmpegThumbnailGenerator(executor, EmbeddedFfmpegResolver.getFfmpegPath());
 
     return new DefaultVideoProcessor(extractor, transcoder, generator);
   }

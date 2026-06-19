@@ -25,7 +25,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +51,7 @@ public class DefaultVideoProcessor implements VideoProcessor {
         videoTranscoder,
         thumbnailGenerator,
         Optional.empty(),
-        ForkJoinPool.commonPool());
+        Executors.newVirtualThreadPerTaskExecutor());
   }
 
   public DefaultVideoProcessor(
@@ -63,7 +64,7 @@ public class DefaultVideoProcessor implements VideoProcessor {
         videoTranscoder,
         thumbnailGenerator,
         Optional.ofNullable(storageProvider),
-        ForkJoinPool.commonPool());
+        Executors.newVirtualThreadPerTaskExecutor());
   }
 
   public DefaultVideoProcessor(
@@ -97,8 +98,13 @@ public class DefaultVideoProcessor implements VideoProcessor {
     List<VideoAsset> assets = Collections.synchronizedList(new ArrayList<>());
     List<Path> temporaryFiles = Collections.synchronizedList(new ArrayList<>());
 
+    // Coordinate concurrency via Semaphore matching maxConcurrentTranscodes
+    Semaphore transcodeSemaphore = new Semaphore(request.maxConcurrentTranscodes());
+
     Optional<Thumbnail> thumbnail = scheduleThumbnail(request, tasks, temporaryFiles);
-    scheduleTranscodes(request, encryption, tasks, assets, temporaryFiles);
+    scheduleTranscodes(request, encryption, tasks, assets, temporaryFiles, transcodeSemaphore);
+
+    // Await all with fail-fast cancellation
     await(tasks);
 
     Path masterPlaylist = createMasterPlaylistIfNeeded(request, assets);
@@ -160,13 +166,27 @@ public class DefaultVideoProcessor implements VideoProcessor {
             .outputDir()
             .resolve("thumbnail_" + System.currentTimeMillis() + "." + options.format());
 
-    tasks.add(
-        CompletableFuture.runAsync(
-            () -> {
-              thumbnailGenerator.generate(request.source(), target, options);
-              temporaryFiles.add(target);
-            },
-            executorService));
+    CompletableFuture<Void> future = new CompletableFuture<>();
+    tasks.add(future);
+
+    executorService.execute(
+        () -> {
+          Thread runningThread = Thread.currentThread();
+          future.whenComplete(
+              (res, ex) -> {
+                if (future.isCancelled()) {
+                  runningThread.interrupt();
+                }
+              });
+
+          try {
+            thumbnailGenerator.generate(request.source(), target, options);
+            temporaryFiles.add(target);
+            future.complete(null);
+          } catch (Throwable t) {
+            future.completeExceptionally(t);
+          }
+        });
 
     return Optional.of(
         new Thumbnail(
@@ -182,14 +202,28 @@ public class DefaultVideoProcessor implements VideoProcessor {
       HlsEncryptionConfig encryption,
       List<CompletableFuture<Void>> tasks,
       List<VideoAsset> assets,
-      List<Path> temporaryFiles) {
+      List<Path> temporaryFiles,
+      Semaphore semaphore) {
     for (VideoResolution resolution : request.resolutions()) {
       Path target = createVideoTarget(request, resolution);
       TranscodingOptions options = createTranscodingOptions(request, resolution, encryption);
 
-      tasks.add(
-          CompletableFuture.runAsync(
-              () -> {
+      CompletableFuture<Void> future = new CompletableFuture<>();
+      tasks.add(future);
+
+      executorService.execute(
+          () -> {
+            Thread runningThread = Thread.currentThread();
+            future.whenComplete(
+                (res, ex) -> {
+                  if (future.isCancelled()) {
+                    runningThread.interrupt();
+                  }
+                });
+
+            try {
+              semaphore.acquire();
+              try {
                 videoTranscoder.transcode(request.source(), target, options);
                 assets.add(
                     new VideoAsset(target, resolution, fileSize(target), options.videoCodec()));
@@ -197,8 +231,17 @@ public class DefaultVideoProcessor implements VideoProcessor {
                 if (request.generateHls()) {
                   temporaryFiles.addAll(findHlsSegments(target));
                 }
-              },
-              executorService));
+                future.complete(null);
+              } finally {
+                semaphore.release();
+              }
+            } catch (Throwable t) {
+              if (t instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+              }
+              future.completeExceptionally(t);
+            }
+          });
     }
   }
 
@@ -211,11 +254,18 @@ public class DefaultVideoProcessor implements VideoProcessor {
 
   private TranscodingOptions createTranscodingOptions(
       VideoRequest request, VideoResolution resolution, HlsEncryptionConfig encryption) {
+    int threads = request.encodingThreads();
+    if (threads <= 0) {
+      int availableCores = Runtime.getRuntime().availableProcessors();
+      threads = Math.max(1, availableCores / request.maxConcurrentTranscodes());
+    }
+
     TranscodingOptions.Builder builder =
         TranscodingOptions.builder()
             .resolution(resolution)
             .generateHls(request.generateHls())
-            .threads(request.encodingThreads());
+            .threads(threads)
+            .timeoutSeconds(request.processTimeoutSeconds());
     if (encryption != null) {
       builder.encryptionConfig(encryption);
     }
@@ -223,13 +273,35 @@ public class DefaultVideoProcessor implements VideoProcessor {
   }
 
   private void await(List<CompletableFuture<Void>> tasks) {
+    if (tasks.isEmpty()) {
+      return;
+    }
+
+    // Attach exceptional listener to fail-fast and cancel all other tasks if any task fails
+    for (CompletableFuture<Void> task : tasks) {
+      task.exceptionally(
+          ex -> {
+            for (CompletableFuture<Void> otherTask : tasks) {
+              if (otherTask != task) {
+                otherTask.cancel(true);
+              }
+            }
+            return null;
+          });
+    }
+
     try {
       CompletableFuture.allOf(tasks.toArray(CompletableFuture[]::new)).join();
     } catch (CompletionException e) {
-      if (e.getCause() instanceof VideoException videoException) {
+      Throwable cause = e.getCause();
+      if (cause instanceof java.util.concurrent.CancellationException) {
+        throw new VideoException(
+            "Video processing was cancelled due to a failure in another task", cause);
+      }
+      if (cause instanceof VideoException videoException) {
         throw videoException;
       }
-      throw new VideoException("Video processing task failed", e.getCause());
+      throw new VideoException("Video processing task failed", cause);
     }
   }
 

@@ -112,7 +112,7 @@ public class FfmpegVideoTranscoder implements VideoTranscoder {
     command.add(target.toAbsolutePath().toString());
 
     try {
-      CommandResult result = executor.execute(command);
+      CommandResult result = executor.execute(command, options.timeoutSeconds());
       if (!result.success()) {
         throw new TranscodingException(
             "ffmpeg transcode failed with exit code "

@@ -27,12 +27,12 @@ public final class VideoProcessorFactory {
     ProcessBuilderExecutor executor = new ProcessBuilderExecutor();
     JacksonMetadataParser parser = new JacksonMetadataParser();
 
-    FfprobeMetadataExtractor extractor = new FfprobeMetadataExtractor(
-        executor, parser, EmbeddedFfmpegResolver.getFfprobePath());
-    FfmpegVideoTranscoder transcoder = new FfmpegVideoTranscoder(
-        executor, EmbeddedFfmpegResolver.getFfmpegPath());
-    FfmpegThumbnailGenerator generator = new FfmpegThumbnailGenerator(
-        executor, EmbeddedFfmpegResolver.getFfmpegPath());
+    FfprobeMetadataExtractor extractor =
+        new FfprobeMetadataExtractor(executor, parser, EmbeddedFfmpegResolver.getFfprobePath());
+    FfmpegVideoTranscoder transcoder =
+        new FfmpegVideoTranscoder(executor, EmbeddedFfmpegResolver.getFfmpegPath());
+    FfmpegThumbnailGenerator generator =
+        new FfmpegThumbnailGenerator(executor, EmbeddedFfmpegResolver.getFfmpegPath());
 
     return new DefaultVideoProcessor(extractor, transcoder, generator);
   }

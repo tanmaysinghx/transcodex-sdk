@@ -55,7 +55,7 @@ class FfmpegVideoTranscoderTest {
             .audioBitrate(128000L)
             .build();
 
-    when(executor.execute(anyList())).thenReturn(new CommandResult(0, "success", ""));
+    when(executor.execute(anyList(), anyLong())).thenReturn(new CommandResult(0, "success", ""));
 
     transcoder.transcode(source, target, options);
 
@@ -85,7 +85,8 @@ class FfmpegVideoTranscoderTest {
                           "fast",
                           target.toAbsolutePath().toString());
                   return true;
-                }));
+                }),
+            eq(1800L));
   }
 
   @Test
@@ -97,7 +98,8 @@ class FfmpegVideoTranscoderTest {
     TranscodingOptions options =
         TranscodingOptions.builder().resolution(VideoResolution.P720).build();
 
-    when(executor.execute(anyList())).thenReturn(new CommandResult(1, "", "transcode error"));
+    when(executor.execute(anyList(), anyLong()))
+        .thenReturn(new CommandResult(1, "", "transcode error"));
 
     assertThatThrownBy(() -> transcoder.transcode(source, target, options))
         .isInstanceOf(TranscodingException.class)

@@ -67,4 +67,19 @@ class ProcessBuilderExecutorTest {
     assertThatThrownBy(() -> executor.execute(List.of()))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  void shouldThrowTimeoutExceptionForLongRunningCommand() {
+    String os = System.getProperty("os.name").toLowerCase();
+    List<String> command;
+    if (os.contains("win")) {
+      command = List.of("ping", "-n", "10", "127.0.0.1"); // takes ~9 seconds
+    } else {
+      command = List.of("sleep", "9");
+    }
+
+    assertThatThrownBy(() -> executor.execute(command, 1))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("timed out after 1 seconds");
+  }
 }

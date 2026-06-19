@@ -14,5 +14,10 @@ public interface FfmpegExecutor {
    * @throws IOException if process spawning or stream communication fails.
    * @throws InterruptedException if the execution thread is interrupted while waiting.
    */
-  CommandResult execute(List<String> command) throws IOException, InterruptedException;
+  default CommandResult execute(List<String> command) throws IOException, InterruptedException {
+    return execute(command, 1800);
+  }
+
+  CommandResult execute(List<String> command, long timeoutSeconds)
+      throws IOException, InterruptedException;
 }

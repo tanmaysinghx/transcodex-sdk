@@ -189,4 +189,67 @@ class DefaultVideoProcessorTest {
 
     verifyNoInteractions(videoTranscoder, thumbnailGenerator, storageProvider);
   }
+
+  @Test
+  void shouldCancelRemainingTasksOnFailure(@TempDir Path tempDir)
+      throws IOException, InterruptedException {
+    Path source = tempDir.resolve("input.mp4");
+    Files.createFile(source);
+    Path outputDir = tempDir.resolve("output");
+
+    VideoMetadata metadata =
+        new VideoMetadata(
+            Duration.ofSeconds(10),
+            1000L,
+            100L,
+            "mp4",
+            new VideoStreamMetadata("h264", 1920, 1080, 30.0, "16:9", 80L),
+            Optional.empty());
+
+    when(metadataExtractor.extract(source)).thenReturn(metadata);
+
+    // Mock first transcoder call to fail fast, and second one to sleep
+    java.util.concurrent.atomic.AtomicBoolean secondTaskInterrupted =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    doThrow(new TranscodingException("Transcode failure for P720"))
+        .when(videoTranscoder)
+        .transcode(
+            eq(source),
+            any(Path.class),
+            argThat(opt -> opt != null && opt.resolution() == VideoResolution.P720));
+
+    doAnswer(
+            invocation -> {
+              try {
+                Thread.sleep(5000);
+              } catch (InterruptedException e) {
+                secondTaskInterrupted.set(true);
+                throw e;
+              }
+              return null;
+            })
+        .when(videoTranscoder)
+        .transcode(
+            eq(source),
+            any(Path.class),
+            argThat(opt -> opt != null && opt.resolution() == VideoResolution.P1080));
+
+    VideoRequest request =
+        VideoRequest.builder()
+            .source(source)
+            .outputDir(outputDir)
+            .resolution(VideoResolution.P720)
+            .resolution(VideoResolution.P1080)
+            .build();
+
+    assertThatThrownBy(() -> processor.process(request))
+        .isInstanceOf(TranscodingException.class)
+        .hasMessage("Transcode failure for P720");
+
+    // Wait a tiny bit to make sure interrupt signal propagates to the second thread
+    Thread.sleep(100);
+
+    assertThat(secondTaskInterrupted.get()).isTrue();
+  }
 }

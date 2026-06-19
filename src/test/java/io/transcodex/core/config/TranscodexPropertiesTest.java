@@ -10,7 +10,8 @@ class TranscodexPropertiesTest {
   @Test
   void shouldLoadDefaultProperties() {
     TranscodexProperties props = new TranscodexProperties();
-    assertThat(props.getDefaultResolutions()).containsExactly(VideoResolution.P360, VideoResolution.P720);
+    assertThat(props.getDefaultResolutions())
+        .containsExactly(VideoResolution.P360, VideoResolution.P720);
     assertThat(props.isDefaultEncryptChunks()).isFalse();
     assertThat(props.getDefaultEncodingThreads()).isEqualTo(4);
     assertThat(props.isDefaultGenerateHls()).isTrue();
