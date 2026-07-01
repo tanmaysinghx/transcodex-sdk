@@ -7,7 +7,7 @@
 
     <groupId>io.transcodex</groupId>
     <artifactId>transcodex-sdk</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>TranscodeX SDK</name>

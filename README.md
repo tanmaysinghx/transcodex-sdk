@@ -86,9 +86,9 @@ mvn clean package
 ```
 
 This compiles the codebase, runs the test suite, and produces **two** JAR artifacts in the `target/` directory:
-1. `transcodex-sdk-0.1.0-SNAPSHOT.jar`
+1. `transcodex-sdk-1.0.1.jar`
    * **Thin library JAR** for inclusion in other projects. Does not package dependencies (Jackson, SLF4J, etc.).
-2. `transcodex-sdk-0.1.0-SNAPSHOT-all.jar`
+2. `transcodex-sdk-1.0.1-all.jar`
    * **Standalone executable fat JAR**. Shaded with all dependencies, containing the interactive command-line interface (CLI).
 
 ---
@@ -98,7 +98,7 @@ This compiles the codebase, runs the test suite, and produces **two** JAR artifa
 Run the shaded executable JAR from your command line:
 
 ```bash
-java -jar target/transcodex-sdk-0.1.0-SNAPSHOT-all.jar -i <input_file> -o <output_directory> [options]
+java -jar target/transcodex-sdk-1.0.1-all.jar -i <input_file> -o <output_directory> [options]
 ```
 
 ### CLI Command Options
@@ -127,25 +127,25 @@ Here are common copy-pasteable use cases for running the CLI.
 ### Use Case 1: Simple Transcoding with Default Settings
 Transcodes input video into default resolutions (`360p` & `720p`) and extracts a JPG thumbnail at 0.5s into the output directory:
 ```bash
-java -jar target/transcodex-sdk-0.1.0-SNAPSHOT-all.jar -i sample.mp4 -o ./output/usecase1
+java -jar target/transcodex-sdk-1.0.1-all.jar -i sample.mp4 -o ./output/usecase1
 ```
 
 ### Use Case 2: Custom Resolutions Transcoding
 Transcodes the video into only `480p` and high-definition `1080p`:
 ```bash
-java -jar target/transcodex-sdk-0.1.0-SNAPSHOT-all.jar -i sample.mp4 -o ./output/usecase2 -r 480p,1080p
+java -jar target/transcodex-sdk-1.0.1-all.jar -i sample.mp4 -o ./output/usecase2 -r 480p,1080p
 ```
 
 ### Use Case 3: Encrypted HLS adaptive streaming (DRM)
 Transcodes to default resolutions, generates HLS segments, and encrypts them using AES-128 keys with an auto-generated master playlist:
 ```bash
-java -jar target/transcodex-sdk-0.1.0-SNAPSHOT-all.jar -i sample.mp4 -o ./output/usecase3 -e
+java -jar target/transcodex-sdk-1.0.1-all.jar -i sample.mp4 -o ./output/usecase3 -e
 ```
 
 ### Use Case 4: High-Performance Processing with Custom Thumbnail
 Allocates 8 threads for transcribing, disables HLS (generates raw formats/metadata), and extracts a high-res PNG thumbnail at the 5-second mark:
 ```bash
-java -jar target/transcodex-sdk-0.1.0-SNAPSHOT-all.jar -i sample.mp4 -o ./output/usecase4 --no-hls --thumbnail-width 1280 --thumbnail-height 720 --thumbnail-pos 5.0 --thumbnail-format png -t 8 -r 720p
+java -jar target/transcodex-sdk-1.0.1-all.jar -i sample.mp4 -o ./output/usecase4 --no-hls --thumbnail-width 1280 --thumbnail-height 720 --thumbnail-pos 5.0 --thumbnail-format png -t 8 -r 720p
 ```
 
 ---
@@ -164,19 +164,19 @@ Then, add the dependency in your application's `pom.xml`:
 <dependency>
     <groupId>io.transcodex</groupId>
     <artifactId>transcodex-sdk</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
 ### Option B: Local Lib Dependency
-Place the compiled `transcodex-sdk-0.1.0-SNAPSHOT.jar` inside your project's local `libs/` folder and include it via system path in `pom.xml`:
+Place the compiled `transcodex-sdk-1.0.1.jar` inside your project's local `libs/` folder and include it via system path in `pom.xml`:
 ```xml
 <dependency>
     <groupId>io.transcodex</groupId>
     <artifactId>transcodex-sdk</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>1.0.1</version>
     <scope>system</scope>
-    <systemPath>${project.basedir}/libs/transcodex-sdk-0.1.0-SNAPSHOT.jar</systemPath>
+    <systemPath>${project.basedir}/libs/transcodex-sdk-1.0.1.jar</systemPath>
 </dependency>
 ```
 
